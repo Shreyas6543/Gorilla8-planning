@@ -5,6 +5,7 @@ import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 const NAV_LINKS = [
   { to: "/", label: "Home" },
   { to: "/comparison", label: "Comparison" },
+  { to: "/expenses", label: "Expenses" },
 ];
 
 interface PageHeaderProps {
