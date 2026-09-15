@@ -91,9 +91,12 @@ scattered through components.
 `src/lib/editAccess.ts` + the gate UI in `ExpensesPage.tsx`: the page loads
 **read-only** by default (plain numbers, no inputs). An "Edit" button opens a
 passcode dialog; correct passcode (`VITE_EDIT_PASSCODE` in `.env.local`,
-default fallback `"gorilla8"` if unset) sets a `sessionStorage` flag and
-switches the page to editable inputs, with a "Lock" button to re-engage
-read-only manually. This is explicitly **not real security** — the passcode
+default fallback `"gorilla8"` if unset) flips in-memory React state to
+editable inputs, with a "Lock" button to re-engage read-only manually.
+**Deliberately not persisted anywhere** (no sessionStorage/localStorage) —
+Shreyas explicitly wants any refresh, tab close, or navigating away and back
+to require the passcode again, every time. Don't add persistence back to
+this without being asked. This is explicitly **not real security** — the passcode
 ships inside the built client bundle, same caveat as the Supabase key. It
 exists to stop casual/accidental edits by someone who opens the page without
 knowing the code, not to protect against a determined attacker. Don't

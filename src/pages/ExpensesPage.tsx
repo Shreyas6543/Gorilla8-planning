@@ -35,7 +35,7 @@ import {
   type PropertyKey,
 } from "../lib/expenses";
 import { isSupabaseConfigured } from "../lib/supabaseClient";
-import { checkPasscode, isUnlocked, setUnlocked } from "../lib/editAccess";
+import { checkPasscode } from "../lib/editAccess";
 import { formatINR } from "../lib/calculations";
 import { PageHeader } from "../components/PageHeader";
 import { MetricCard } from "../components/MetricCard";
@@ -121,7 +121,7 @@ const headCellSx = {
 export function ExpensesPage() {
   const [state, setState] = useState<ExpenseState>(() => createEmptyState());
   const [loaded, setLoaded] = useState(false);
-  const [unlocked, setUnlockedState] = useState<boolean>(() => isUnlocked());
+  const [unlocked, setUnlockedState] = useState<boolean>(false);
   const [gateOpen, setGateOpen] = useState(false);
   const [passcodeInput, setPasscodeInput] = useState("");
   const [passcodeError, setPasscodeError] = useState(false);
@@ -165,7 +165,6 @@ export function ExpensesPage() {
 
   const handleUnlockSubmit = () => {
     if (checkPasscode(passcodeInput)) {
-      setUnlocked(true);
       setUnlockedState(true);
       setGateOpen(false);
       setPasscodeInput("");
@@ -176,7 +175,6 @@ export function ExpensesPage() {
   };
 
   const handleLock = () => {
-    setUnlocked(false);
     setUnlockedState(false);
   };
 

@@ -4,8 +4,11 @@
 // recover it. It's meant to stop casual/accidental edits by someone who
 // opens the page without the passcode, not to protect against a determined
 // attacker.
+//
+// Deliberately not persisted anywhere (no sessionStorage/localStorage) —
+// unlocking is in-memory only, so a refresh, a tab close, or navigating away
+// and back always requires the passcode again.
 
-const SESSION_KEY = "gorilla8-expenses-unlocked";
 const DEFAULT_PASSCODE = "gorilla8"; // used only if VITE_EDIT_PASSCODE isn't set
 
 export function getConfiguredPasscode(): string {
@@ -15,21 +18,4 @@ export function getConfiguredPasscode(): string {
 
 export function checkPasscode(input: string): boolean {
   return input.trim().length > 0 && input.trim() === getConfiguredPasscode();
-}
-
-export function isUnlocked(): boolean {
-  try {
-    return window.sessionStorage.getItem(SESSION_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-export function setUnlocked(value: boolean): void {
-  try {
-    if (value) window.sessionStorage.setItem(SESSION_KEY, "1");
-    else window.sessionStorage.removeItem(SESSION_KEY);
-  } catch {
-    // sessionStorage unavailable — edit state just won't persist across reloads
-  }
 }
