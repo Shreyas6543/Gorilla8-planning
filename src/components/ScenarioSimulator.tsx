@@ -13,6 +13,7 @@ export function ScenarioSimulator({ initialHours }: ScenarioSimulatorProps) {
   const [pool, setPool] = useState(PROPERTIES.small.minPool);
   const [ps5, setPs5] = useState(PROPERTIES.small.minPs5);
   const [carrom, setCarrom] = useState(PROPERTIES.small.maxCarrom);
+  const [racingSim, setRacingSim] = useState(PROPERTIES.small.maxRacingSim);
   const [hours, setHours] = useState(initialHours);
 
   const property = PROPERTIES[propertyId];
@@ -22,11 +23,12 @@ export function ScenarioSimulator({ initialHours }: ScenarioSimulatorProps) {
     setPool(PROPERTIES[id].minPool);
     setPs5(PROPERTIES[id].minPs5);
     setCarrom(PROPERTIES[id].maxCarrom);
+    setRacingSim(PROPERTIES[id].maxRacingSim);
   };
 
   const result = useMemo(
-    () => calcScenario(property, { pool, ps5, carrom, hoursPerDay: hours }),
-    [property, pool, ps5, carrom, hours]
+    () => calcScenario(property, { pool, ps5, carrom, racingSim, hoursPerDay: hours }),
+    [property, pool, ps5, carrom, racingSim, hours]
   );
 
   const poolOptions = Array.from({ length: property.maxPool - property.minPool + 1 }, (_, i) => property.minPool + i);
@@ -34,6 +36,10 @@ export function ScenarioSimulator({ initialHours }: ScenarioSimulatorProps) {
   const carromOptions = Array.from(
     { length: property.maxCarrom - property.minCarrom + 1 },
     (_, i) => property.minCarrom + i
+  );
+  const racingSimOptions = Array.from(
+    { length: property.maxRacingSim - property.minRacingSim + 1 },
+    (_, i) => property.minRacingSim + i
   );
 
   return (
@@ -111,6 +117,26 @@ export function ScenarioSimulator({ initialHours }: ScenarioSimulatorProps) {
             </Box>
 
             <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+                Racing simulator (₹350/hr, new idea)
+              </Typography>
+              <ToggleButtonGroup
+                value={racingSim}
+                exclusive
+                onChange={(_, v) => v !== null && setRacingSim(v)}
+                size="small"
+                disabled={racingSimOptions.length <= 1}
+              >
+                {racingSimOptions.map((n) => (
+                  <ToggleButton key={n} value={n}>
+                    {n}
+                    {racingSimOptions.length <= 1 ? " (n/a)" : ""}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Box>
+
+            <Box>
               <Stack direction="row" sx={{ justifyContent: "space-between" }}>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
                   Paid hours/day
@@ -145,6 +171,16 @@ export function ScenarioSimulator({ initialHours }: ScenarioSimulatorProps) {
                   label="Carrom revenue"
                   value={formatINR(result.carromRevenue, { compact: true })}
                   sublabel={`${carrom} board @ ₹100/hr`}
+                  size="sm"
+                />
+              </Grid>
+            )}
+            {racingSim > 0 && (
+              <Grid size={{ xs: 6, sm: 4 }}>
+                <MetricCard
+                  label="Racing sim revenue"
+                  value={formatINR(result.racingSimRevenue, { compact: true })}
+                  sublabel={`${racingSim} rig @ ₹350/hr`}
                   size="sm"
                 />
               </Grid>

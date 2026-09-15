@@ -2,6 +2,7 @@ import {
   OPERATING_DAYS_PER_MONTH,
   RATE_PER_STATION_PER_HOUR,
   RATE_PER_CARROM_PER_HOUR,
+  RATE_PER_RACING_SIM_PER_HOUR,
   fixedMonthlyExpense,
   type PropertyConfig,
 } from "../config/properties";
@@ -10,6 +11,7 @@ export interface ScenarioInput {
   pool: number;
   ps5: number;
   carrom: number;
+  racingSim: number;
   hoursPerDay: number;
 }
 
@@ -17,6 +19,7 @@ export interface ScenarioResult {
   poolRevenue: number;
   ps5Revenue: number;
   carromRevenue: number;
+  racingSimRevenue: number;
   totalRevenue: number;
   fixedExpense: number;
   operatingSurplus: number;
@@ -36,7 +39,8 @@ export function calcScenario(property: PropertyConfig, input: ScenarioInput): Sc
   const poolRevenue = stationRevenue(input.pool, input.hoursPerDay);
   const ps5Revenue = stationRevenue(input.ps5, input.hoursPerDay);
   const carromRevenue = stationRevenue(input.carrom, input.hoursPerDay, RATE_PER_CARROM_PER_HOUR);
-  const totalRevenue = poolRevenue + ps5Revenue + carromRevenue;
+  const racingSimRevenue = stationRevenue(input.racingSim, input.hoursPerDay, RATE_PER_RACING_SIM_PER_HOUR);
+  const totalRevenue = poolRevenue + ps5Revenue + carromRevenue + racingSimRevenue;
   const fixedExpense = fixedMonthlyExpense(property);
   const operatingSurplus = totalRevenue - fixedExpense;
   const annualOperatingSurplus = operatingSurplus * 12;
@@ -47,6 +51,7 @@ export function calcScenario(property: PropertyConfig, input: ScenarioInput): Sc
     poolRevenue,
     ps5Revenue,
     carromRevenue,
+    racingSimRevenue,
     totalRevenue,
     fixedExpense,
     operatingSurplus,

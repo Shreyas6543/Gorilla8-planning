@@ -23,6 +23,8 @@ interface ScenarioControlsProps {
   onPs5LargeChange: (n: number) => void;
   carromLarge: number;
   onCarromLargeChange: (n: number) => void;
+  racingSimSmall: number;
+  onRacingSimSmallChange: (n: number) => void;
 }
 
 const PRESETS = [
@@ -44,6 +46,8 @@ export function ScenarioControls({
   onPs5LargeChange,
   carromLarge,
   onCarromLargeChange,
+  racingSimSmall,
+  onRacingSimSmallChange,
 }: ScenarioControlsProps) {
   return (
     <Paper
@@ -59,7 +63,7 @@ export function ScenarioControls({
         Business Scenario
       </Typography>
 
-      <Stack direction={{ xs: "column", lg: "row" }} spacing={4} sx={{ mt: 1 }}>
+      <Stack direction={{ xs: "column", lg: "row" }} spacing={4} sx={{ mt: 1, flexWrap: "wrap", rowGap: 4 }}>
         {/* Hours control */}
         <Box sx={{ flex: 1.3, minWidth: 0 }}>
           <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "baseline" }}>
@@ -193,6 +197,32 @@ export function ScenarioControls({
           >
             <ToggleButton value={0}>0 (none)</ToggleButton>
             <ToggleButton value={1}>1</ToggleButton>
+          </ToggleButtonGroup>
+        </Box>
+
+        {/* Racing simulator */}
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1, visibility: { xs: "visible", lg: "hidden" } }}>
+            Racing simulator
+          </Typography>
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, color: "text.secondary" }}>
+            Racing sim · {PROPERTIES.small.shortLabel} (₹350/hr, new idea)
+          </Typography>
+          <ToggleButtonGroup
+            value={racingSimSmall}
+            exclusive
+            size="small"
+            onChange={(_, v) => v !== null && onRacingSimSmallChange(v)}
+          >
+            <ToggleButton value={0}>0 (none)</ToggleButton>
+            <ToggleButton value={1}>1</ToggleButton>
+          </ToggleButtonGroup>
+
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mt: 2, mb: 1, color: "text.secondary" }}>
+            Racing sim · {PROPERTIES.large.shortLabel}
+          </Typography>
+          <ToggleButtonGroup value={0} exclusive size="small" disabled>
+            <ToggleButton value={0}>0 (n/a)</ToggleButton>
           </ToggleButtonGroup>
         </Box>
       </Stack>

@@ -4,6 +4,7 @@ import {
   fixedMonthlyExpense,
   RATE_PER_STATION_PER_HOUR,
   RATE_PER_CARROM_PER_HOUR,
+  RATE_PER_RACING_SIM_PER_HOUR,
   OPERATING_DAYS_PER_MONTH,
 } from "../config/properties";
 import { formatINR } from "../lib/calculations";
@@ -14,18 +15,27 @@ interface CrossoverPanelProps {
   poolLarge: number;
   ps5Large: number;
   carromLarge: number;
+  racingSimSmall: number;
 }
 
-export function CrossoverPanel({ hoursPerDay, poolLarge, ps5Large, carromLarge }: CrossoverPanelProps) {
+export function CrossoverPanel({
+  hoursPerDay,
+  poolLarge,
+  ps5Large,
+  carromLarge,
+  racingSimSmall,
+}: CrossoverPanelProps) {
   const extraFixedCost = fixedMonthlyExpense(PROPERTIES.large) - fixedMonthlyExpense(PROPERTIES.small);
   const extraInvestment = PROPERTIES.large.setupInvestment - PROPERTIES.small.setupInvestment;
   const poolDiff = poolLarge - PROPERTIES.small.minPool;
   const ps5Diff = ps5Large - PROPERTIES.small.minPs5;
   const carromDiff = carromLarge - PROPERTIES.small.minCarrom;
-  const extraStations = poolDiff + ps5Diff + carromDiff;
+  const racingSimDiff = PROPERTIES.large.minRacingSim - racingSimSmall; // negative when 1,350 has the racing sim
+  const extraStations = poolDiff + ps5Diff + carromDiff + racingSimDiff;
   const extraRevenuePerHourPerDay =
     (poolDiff + ps5Diff) * RATE_PER_STATION_PER_HOUR * OPERATING_DAYS_PER_MONTH +
-    carromDiff * RATE_PER_CARROM_PER_HOUR * OPERATING_DAYS_PER_MONTH;
+    carromDiff * RATE_PER_CARROM_PER_HOUR * OPERATING_DAYS_PER_MONTH +
+    racingSimDiff * RATE_PER_RACING_SIM_PER_HOUR * OPERATING_DAYS_PER_MONTH;
 
   const crossoverHours =
     extraRevenuePerHourPerDay > 0 ? extraFixedCost / extraRevenuePerHourPerDay : null;
@@ -64,7 +74,7 @@ export function CrossoverPanel({ hoursPerDay, poolLarge, ps5Large, carromLarge }
           <MetricCard
             label="Extra stations selected"
             value={`+${extraStations}`}
-            sublabel={`${poolDiff} pool, ${ps5Diff} PS5, +${carromDiff} carrom vs. 1,350 sq ft`}
+            sublabel={`${poolDiff} pool, ${ps5Diff} PS5, +${carromDiff} carrom, ${racingSimDiff} racing sim vs. 1,350 sq ft`}
             accent={extraStations > 0 ? PROPERTIES.large.accent : "#9AA4B2"}
           />
         </Grid>
@@ -78,12 +88,14 @@ export function CrossoverPanel({ hoursPerDay, poolLarge, ps5Large, carromLarge }
           bgcolor: isAheadNow ? "rgba(61,178,255,0.08)" : "rgba(255,107,107,0.08)",
         }}
       >
-        {extraRevenuePerHourPerDay === 0 ? (
+        {extraRevenuePerHourPerDay <= 0 ? (
           <Typography sx={{ fontWeight: 700 }}>
-            With the same station count as 1,350 sq ft (no expansion used) and no carrom board, the 2,000 sq ft
-            option only adds {formatINR(extraFixedCost, { compact: true })}/month in cost with no extra revenue — it
-            can't become more attractive until you add pool tables or PS5 stations beyond the minimum. Use the
-            controls above to simulate expansion.
+            {racingSimDiff < 0
+              ? "With 1,350 sq ft's racing simulator switched on, its revenue per station actually outpaces what 2,000 sq ft currently has selected — "
+              : "With the same station count as 1,350 sq ft (no expansion used) and no carrom board, "}
+            the 2,000 sq ft option only adds {formatINR(extraFixedCost, { compact: true })}/month in cost{" "}
+            {extraRevenuePerHourPerDay < 0 ? "for less revenue" : "with no extra revenue"} — it can't become more
+            attractive at this configuration. Use the controls above to simulate expansion.
           </Typography>
         ) : (
           <Stack spacing={0.5}>

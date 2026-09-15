@@ -11,6 +11,8 @@ interface PropertyComparisonProps {
   poolLarge: number;
   ps5Large: number;
   carromLarge: number;
+  racingSimSmall: number;
+  racingSimLarge: number;
 }
 
 export function PropertyComparison({
@@ -20,6 +22,8 @@ export function PropertyComparison({
   poolLarge,
   ps5Large,
   carromLarge,
+  racingSimSmall,
+  racingSimLarge,
 }: PropertyComparisonProps) {
   return (
     <Grid container spacing={3} sx={{ alignItems: "stretch" }}>
@@ -30,6 +34,7 @@ export function PropertyComparison({
           pool={PROPERTIES.small.minPool}
           ps5={PROPERTIES.small.minPs5}
           carrom={PROPERTIES.small.minCarrom}
+          racingSim={racingSimSmall}
           featured={propertyMode === "small"}
           dimmed={propertyMode === "large"}
         />
@@ -41,6 +46,7 @@ export function PropertyComparison({
           pool={poolLarge}
           ps5={ps5Large}
           carrom={carromLarge}
+          racingSim={racingSimLarge}
           featured={propertyMode === "large"}
           dimmed={propertyMode === "small"}
         />

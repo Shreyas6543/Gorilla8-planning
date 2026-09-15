@@ -2,7 +2,7 @@ import { Box, Paper, Stack, Typography } from "@mui/material";
 import { PROPERTIES, totalCapitalPool } from "../config/properties";
 import { formatINR } from "../lib/calculations";
 
-function CapitalBar({ property }: { property: (typeof PROPERTIES)[keyof typeof PROPERTIES] }) {
+export function CapitalBar({ property }: { property: (typeof PROPERTIES)[keyof typeof PROPERTIES] }) {
   const total = totalCapitalPool(property);
   const investedPct = (property.setupInvestment / total) * 100;
   const remainingPct = 100 - investedPct;

@@ -19,6 +19,8 @@ export interface PropertyConfig {
   maxPs5: number;
   minCarrom: number;
   maxCarrom: number;
+  minRacingSim: number;
+  maxRacingSim: number;
   accent: string;
   accentSoft: string;
   emoji: string;
@@ -26,6 +28,10 @@ export interface PropertyConfig {
 
 export const RATE_PER_STATION_PER_HOUR = 200; // ₹ per pool table / PS5 station, per hour
 export const RATE_PER_CARROM_PER_HOUR = 100; // ₹ per carrom board, per hour
+// Racing simulator rig (steering wheel + pedals setup) — a premium add-on funded
+// out of otherwise-idle remaining capital. Priced above plain PS5 (₹200/hr) to
+// reflect the added hardware.
+export const RATE_PER_RACING_SIM_PER_HOUR = 350; // ₹ per racing simulator rig, per hour
 export const OPERATING_DAYS_PER_MONTH = 30;
 
 export const HOUR_OPTIONS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
@@ -49,6 +55,8 @@ export const PROPERTIES: Record<PropertyId, PropertyConfig> = {
     maxPs5: 5,
     minCarrom: 0,
     maxCarrom: 0,
+    minRacingSim: 0,
+    maxRacingSim: 1,
     accent: "#39FF88",
     accentSoft: "rgba(57, 255, 136, 0.14)",
     emoji: "🟢",
@@ -69,6 +77,8 @@ export const PROPERTIES: Record<PropertyId, PropertyConfig> = {
     maxPs5: 8,
     minCarrom: 0,
     maxCarrom: 1,
+    minRacingSim: 0,
+    maxRacingSim: 0,
     accent: "#3DB2FF",
     accentSoft: "rgba(61, 178, 255, 0.14)",
     emoji: "🔵",

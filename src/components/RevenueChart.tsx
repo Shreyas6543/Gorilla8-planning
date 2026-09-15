@@ -9,9 +9,16 @@ interface RevenueChartProps {
   poolLarge: number;
   ps5Large: number;
   carromLarge: number;
+  racingSimSmall: number;
 }
 
-export function RevenueChart({ hoursPerDay, poolLarge, ps5Large, carromLarge }: RevenueChartProps) {
+export function RevenueChart({
+  hoursPerDay,
+  poolLarge,
+  ps5Large,
+  carromLarge,
+  racingSimSmall,
+}: RevenueChartProps) {
   const hours: number[] = [...HOUR_OPTIONS];
   const smallSeries = hours.map(
     (h) =>
@@ -19,13 +26,19 @@ export function RevenueChart({ hoursPerDay, poolLarge, ps5Large, carromLarge }: 
         pool: PROPERTIES.small.minPool,
         ps5: PROPERTIES.small.minPs5,
         carrom: PROPERTIES.small.minCarrom,
+        racingSim: racingSimSmall,
         hoursPerDay: h,
       }).totalRevenue
   );
   const largeSeries = hours.map(
     (h) =>
-      calcScenario(PROPERTIES.large, { pool: poolLarge, ps5: ps5Large, carrom: carromLarge, hoursPerDay: h })
-        .totalRevenue
+      calcScenario(PROPERTIES.large, {
+        pool: poolLarge,
+        ps5: ps5Large,
+        carrom: carromLarge,
+        racingSim: PROPERTIES.large.minRacingSim,
+        hoursPerDay: h,
+      }).totalRevenue
   );
 
   return (
@@ -34,9 +47,9 @@ export function RevenueChart({ hoursPerDay, poolLarge, ps5Large, carromLarge }: 
         Monthly gaming revenue vs. utilization
       </Typography>
       <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
-        {PROPERTIES.small.shortLabel}: fixed at {PROPERTIES.small.minPool} pool + {PROPERTIES.small.minPs5} PS5.{" "}
-        {PROPERTIES.large.shortLabel}: {poolLarge} pool + {ps5Large} PS5{carromLarge > 0 ? ` + ${carromLarge} carrom` : ""} — set via the
-        Pool tables / PS5 stations / Carrom board selectors above.
+        {PROPERTIES.small.shortLabel}: {PROPERTIES.small.minPool} pool + {PROPERTIES.small.minPs5} PS5
+        {racingSimSmall > 0 ? ` + ${racingSimSmall} racing sim` : ""}. {PROPERTIES.large.shortLabel}: {poolLarge} pool +{" "}
+        {ps5Large} PS5{carromLarge > 0 ? ` + ${carromLarge} carrom` : ""} — set via the selectors above.
       </Typography>
       <Box sx={{ width: "100%", height: 320 }}>
         <LineChart

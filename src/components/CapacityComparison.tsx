@@ -32,6 +32,10 @@ function CapacityCard({ property }: { property: (typeof PROPERTIES)[keyof typeof
           <Typography>🟤 Carrom boards (₹100/hr)</Typography>
           <Typography sx={{ fontWeight: 800 }}>{range(property.minCarrom, property.maxCarrom)}</Typography>
         </Stack>
+        <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "center" }}>
+          <Typography>🏎️ Racing sim (₹350/hr)</Typography>
+          <Typography sx={{ fontWeight: 800 }}>{range(property.minRacingSim, property.maxRacingSim)}</Typography>
+        </Stack>
       </Stack>
       <Box sx={{ mt: 2, pt: 1.5, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
         <Typography variant="caption" sx={{ color: "text.secondary" }}>

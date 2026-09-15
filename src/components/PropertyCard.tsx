@@ -10,11 +10,23 @@ interface PropertyCardProps {
   pool: number;
   ps5: number;
   carrom: number;
+  racingSim: number;
   featured?: boolean;
   dimmed?: boolean;
+  showBreakdown?: boolean;
 }
 
-export function PropertyCard({ property, result, pool, ps5, carrom, featured, dimmed }: PropertyCardProps) {
+export function PropertyCard({
+  property,
+  result,
+  pool,
+  ps5,
+  carrom,
+  racingSim,
+  featured,
+  dimmed,
+  showBreakdown,
+}: PropertyCardProps) {
   const capacityLabel = (min: number, max: number) => (min === max ? `${min}` : `${min}–${max}`);
 
   return (
@@ -92,12 +104,49 @@ export function PropertyCard({ property, result, pool, ps5, carrom, featured, di
           size="small"
           variant="outlined"
         />
+        <Chip
+          label={`🏎️ Racing sim ${capacityLabel(property.minRacingSim, property.maxRacingSim)}`}
+          size="small"
+          variant="outlined"
+        />
       </Stack>
 
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         Current scenario: {pool} pool table{pool !== 1 ? "s" : ""} · {ps5} PS5 station{ps5 !== 1 ? "s" : ""}
         {carrom > 0 ? ` · ${carrom} carrom board (₹100/hr)` : ""}
+        {racingSim > 0 ? ` · ${racingSim} racing sim rig (₹350/hr)` : ""}
       </Typography>
+
+      {showBreakdown && (
+        <Grid container spacing={1.5} sx={{ mt: 1.5 }}>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <MetricCard label="Pool revenue" value={formatINR(result.poolRevenue, { compact: true })} size="sm" />
+          </Grid>
+          <Grid size={{ xs: 6, sm: 3 }}>
+            <MetricCard label="PS5 revenue" value={formatINR(result.ps5Revenue, { compact: true })} size="sm" />
+          </Grid>
+          {carrom > 0 && (
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <MetricCard
+                label="Carrom revenue"
+                value={formatINR(result.carromRevenue, { compact: true })}
+                size="sm"
+              />
+            </Grid>
+          )}
+          {racingSim > 0 && (
+            <Grid size={{ xs: 6, sm: 3 }}>
+              <MetricCard
+                label="Racing sim revenue"
+                value={formatINR(result.racingSimRevenue, { compact: true })}
+                sublabel="new idea"
+                accent={property.accent}
+                size="sm"
+              />
+            </Grid>
+          )}
+        </Grid>
+      )}
 
       <Grid container spacing={1.5} sx={{ mt: 1 }}>
         <Grid size={{ xs: 12, sm: 6 }}>
