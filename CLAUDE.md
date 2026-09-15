@@ -31,8 +31,9 @@ with 1,350's spare capital").
 ## Tech stack
 
 React 19 + TypeScript + Vite + MUI v9 (Material UI) + MUI X Charts +
-react-router-dom v7. No backend — everything is client-side; the Expenses page
-persists to `localStorage`.
+react-router-dom v7 + Supabase (`@supabase/supabase-js`) for the Expenses
+page's data. No custom backend/API of our own — the app talks to Supabase's
+auto-generated REST API directly from the browser.
 
 ## Architecture
 
@@ -48,12 +49,74 @@ scattered through components.
 - `src/lib/calculations.ts` — `calcScenario()` is the one function that turns
   `{pool, ps5, carrom, racingSim, hoursPerDay}` into revenue/surplus/payback.
   Every component funnels through this — never duplicate the math inline.
-- `src/lib/expenses.ts` — load/save/compute helpers for the Expenses page's
-  localStorage-backed state.
+- `src/lib/supabaseClient.ts` — creates the Supabase client from
+  `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (both in `.env.local`,
+  gitignored). `isSupabaseConfigured` is `false` if either is missing.
+- `src/lib/expenses.ts` — load/save/compute helpers for the Expenses page.
+  `loadExpenseState()`/`saveExpenseState()` are now **async**: they read/write
+  a single row (`id = 'singleton'`, `data` = the whole state as JSONB) in the
+  Supabase `expense_data` table when configured, and always mirror to a
+  `localStorage` backup too — so a network hiccup or missing Supabase config
+  never loses data, it just falls back silently.
+- `src/lib/editAccess.ts` — the Expenses-page edit gate (see below).
 - `src/pages/` — `HomePage.tsx` (`/`), `ComparisonPage.tsx` (`/comparison`),
   `ExpensesPage.tsx` (`/expenses`). `App.tsx` is just the router shell.
 - `src/components/` — reusable pieces (`PropertyCard`, `MetricCard`,
   `ScenarioControls`, the various charts, `PageHeader` for the top nav).
+
+### Supabase setup (already done, for reference)
+
+- Project ref `ezmcgqgodupdeivknhqp`, URL `https://ezmcgqgodupdeivknhqp.supabase.co`.
+- One table, created via the SQL editor:
+  ```sql
+  create table expense_data (
+    id text primary key,
+    data jsonb not null,
+    updated_at timestamptz not null default now()
+  );
+  alter table expense_data disable row level security;
+  ```
+- RLS is **disabled on purpose** (Shreyas explicitly chose "fast & open" over
+  adding auth/RLS, given the repo is public and this is just expense-planning
+  data, not sensitive). The anon/publishable key is safe to have in the client
+  bundle by Supabase's design — the thing actually gating writes is the
+  passcode UI (see below), not RLS. Don't add RLS/auth back without being
+  asked — it was a deliberate tradeoff, not an oversight.
+- Credentials live in `.env.local` (gitignored) as `VITE_SUPABASE_URL` /
+  `VITE_SUPABASE_ANON_KEY`. `.env.example` documents the variable names with
+  placeholders for anyone re-cloning this.
+
+### Edit gate (passcode, not real auth)
+
+`src/lib/editAccess.ts` + the gate UI in `ExpensesPage.tsx`: the page loads
+**read-only** by default (plain numbers, no inputs). An "Edit" button opens a
+passcode dialog; correct passcode (`VITE_EDIT_PASSCODE` in `.env.local`,
+default fallback `"gorilla8"` if unset) sets a `sessionStorage` flag and
+switches the page to editable inputs, with a "Lock" button to re-engage
+read-only manually. This is explicitly **not real security** — the passcode
+ships inside the built client bundle, same caveat as the Supabase key. It
+exists to stop casual/accidental edits by someone who opens the page without
+knowing the code, not to protect against a determined attacker. Don't
+"upgrade" this to real auth (Google login, etc.) unless asked — Shreyas
+considered and explicitly declined that in favor of this simpler approach.
+
+### Debounced auto-save (important UX requirement, don't regress)
+
+Shreyas was explicit about this: **no "Save" button, no losing a batch of
+edits.** Every keystroke updates React state immediately; a `setTimeout`-based
+debounce (700ms, see `SAVE_DEBOUNCE_MS` in `ExpensesPage.tsx`) resets on every
+change and only actually persists once typing pauses. A small "Saving…" /
+"Saved" indicator near the Edit/Lock button reflects this. If you touch this
+logic, preserve the property: data is never at risk of being lost because
+someone forgot to click something.
+
+### Mobile-responsive layout (also explicit requirement)
+
+Shreyas edits this page from his phone. `ExpensesPage.tsx` renders two
+layouts side by side in the DOM, toggled by CSS breakpoint (`sx={{ display:
+{xs:'block', md:'none'} }}` and its inverse) — a stacked-card view per item on
+mobile (`xs`/`sm`), the original wide table with horizontal scroll on desktop
+(`md+`). Don't collapse this back to table-only.
 
 ### Pages
 
@@ -72,7 +135,9 @@ scattered through components.
    estimate), **final** price/unit (0 = not yet ordered; fill in once an order
    is actually placed). Grand totals sum Expected always, but Final only counts
    items where a final price has been entered — so "Final total" is literally
-   "money committed so far." Persisted to `localStorage` (no backend yet).
+   "money committed so far." Persisted to Supabase (with a `localStorage`
+   fallback/backup — see Architecture below). Read-only by default; editing
+   requires a passcode (see "Edit gate" below).
 
 ## Data accuracy discipline
 
@@ -94,6 +159,11 @@ excludes food, memberships, advertising beyond stated line items, and taxes.
 - **Vite dependency cache**: if you `npm install` a new package while the dev
   server is already running, you'll likely get an "Invalid hook call" crash.
   Fix: stop the server, `rm -rf node_modules/.vite`, restart.
+- **Editing `.env.local` also forces a full Vite server restart** (it watches
+  env files), which can trigger the same transient "Invalid hook call" for an
+  already-open browser tab. After any `.env.local` change, proactively do the
+  same fix above (kill server, clear `node_modules/.vite`, restart) rather
+  than waiting to see if the user hits a broken page.
 - **npm cache on this machine**: the default `~/.npm` cache has root-owned
   files from a prior issue. `npm install` needs
   `npm_config_cache=/Users/shrego/.npm-cache-fix npm install ...` to work
@@ -142,12 +212,9 @@ that isolation:
 ## Open items / things to follow up on with Shreyas
 
 - Expenses page data is currently blank — Shreyas fills it in via the table UI
-  as he gets quotes / places orders, not via chat. **Storage caveat: it's
-  `localStorage` only** — no backend/database, no API. Data lives in one
-  browser on one machine, isn't backed up, isn't part of the git repo. Shreyas
-  was told this explicitly; if he wants it backed up or accessible cross-
-  device, options discussed were (a) an export/import JSON button (cheap), or
-  (b) a real lightweight database. Neither built yet — ask before adding.
+  as he gets quotes / places orders, not via chat. Now backed by Supabase
+  (cross-device, not tied to one browser), with a `localStorage` fallback if
+  Supabase is unreachable — see Architecture above.
 - Racing simulator has no equipment/hardware cost modeled yet — only its
   hourly revenue rate (₹350/hr) is in the app. If Shreyas gets a quote for the
   rig itself, that's a capital cost that should probably show up either here
