@@ -1,23 +1,28 @@
 import { Box } from "@mui/material";
 import { OUTER_POLYGON, WALL_SEGMENTS, ENTRANCE, GLASS_WALL, BEAMS } from "../config/floorplan";
 import { POOL_TABLES, POOL_CLUSTER_CLEARANCE, PS5_STATIONS, RACING_SIM, COUNTER, CABINET, footprint, type FurnitureItem } from "../config/layout";
+import type { RenderType } from "../lib/furnitureCatalog";
 
 const DEFAULT_FURNITURE: FurnitureItem[] = [...POOL_TABLES, ...PS5_STATIONS, RACING_SIM, COUNTER, CABINET];
 
-const TYPE_STYLE: Record<FurnitureItem["type"], { fill: string; stroke: string; textFill: string; fontSize: number }> = {
+const GENERIC_STYLE = { fill: "rgba(136,153,170,0.3)", stroke: "#8899AA", textFill: "#F2F4F7", fontSize: 0.55 };
+
+const TYPE_STYLE: Record<RenderType, { fill: string; stroke: string; textFill: string; fontSize: number }> = {
   pool: { fill: "#2E7D32", stroke: "#8B5A2B", textFill: "#F2F4F7", fontSize: 0.75 },
   ps5: { fill: "rgba(57,255,136,0.18)", stroke: "#39FF88", textFill: "#39FF88", fontSize: 0.85 },
   racingSim: { fill: "rgba(255,159,67,0.2)", stroke: "#FF9F43", textFill: "#FF9F43", fontSize: 0.7 },
   counter: { fill: "rgba(154,164,178,0.35)", stroke: "#9AA4B2", textFill: "#F2F4F7", fontSize: 0.7 },
   cabinet: { fill: "rgba(184,138,74,0.3)", stroke: "#B88A4A", textFill: "#F2F4F7", fontSize: 0.55 },
+  generic: GENERIC_STYLE,
 };
 
-const TYPE_DISPLAY_LABEL: Record<FurnitureItem["type"], string | null> = {
+const TYPE_DISPLAY_LABEL: Record<RenderType, string | null> = {
   pool: null, // uses the item's own label (Pool 1/2/3)
   ps5: null, // uses the item's own label (PS5 1-5)
   racingSim: "RACING SIM",
   counter: "COUNTER",
   cabinet: "CABINET",
+  generic: null, // uses the item's own label
 };
 
 export const PAD = 5; // feet of padding around the shape, for labels
@@ -161,18 +166,25 @@ export function FloorPlanSvg({ showFurniture = false, items = DEFAULT_FURNITURE 
             />
 
             {items.map((item) => {
-              const style = TYPE_STYLE[item.type];
+              // Defensive fallback: any item that somehow reaches here
+              // without a recognized renderType (e.g. un-migrated data)
+              // still renders as a generic box instead of crashing the
+              // whole page — see normalizeFurnitureItem() in config/layout.ts
+              // for where this should really get fixed up.
+              const style = TYPE_STYLE[item.renderType] ?? GENERIC_STYLE;
               const foot = footprint(item);
               const cx = item.x + foot.w / 2;
               const cy = item.y + foot.h / 2;
-              const label = TYPE_DISPLAY_LABEL[item.type] ?? item.label;
+              const label = TYPE_DISPLAY_LABEL[item.renderType] ?? item.label;
+              const fill = item.renderType === "generic" && item.color ? `${item.color}4D` : style.fill;
+              const stroke = item.renderType === "generic" && item.color ? item.color : style.stroke;
               // Pool table labels run rotated 90° (tall/narrow footprint) —
               // only rotate the text if the item's on-floor shape is still
               // tall/narrow after any rotation the item itself has.
-              const rotateLabel = item.type === "pool" && foot.h >= foot.w;
+              const rotateLabel = item.renderType === "pool" && foot.h >= foot.w;
               return (
                 <g key={item.id}>
-                  <rect x={item.x} y={item.y} width={foot.w} height={foot.h} fill={style.fill} stroke={style.stroke} strokeWidth={0.12} />
+                  <rect x={item.x} y={item.y} width={foot.w} height={foot.h} fill={fill} stroke={stroke} strokeWidth={0.12} />
                   <text
                     x={cx}
                     y={cy}

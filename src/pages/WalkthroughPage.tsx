@@ -88,7 +88,7 @@ export function WalkthroughPage() {
           pointerEvents: "none",
         }}
       >
-        3D models (CC-BY 3.0, Poly Pizza): pool table — Evol-Love · TV — Alex Safayan · bean bag — J-Toastie
+        3D models (Poly Pizza): pool table — Evol-Love (CC-BY 3.0) · TV — Alex Safayan (CC-BY 3.0) · bean bag — J-Toastie (CC-BY 3.0) · chair — Quaternius (CC0)
       </Box>
     </Box>
   );

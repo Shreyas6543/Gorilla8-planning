@@ -2,16 +2,36 @@ import { useState, useRef, useEffect } from "react";
 import { Box } from "@mui/material";
 import { OUTER_POLYGON, WALL_SEGMENTS } from "../config/floorplan";
 import { footprint, type FurnitureItem } from "../config/layout";
+import type { RenderType } from "../lib/furnitureCatalog";
 import { useFurnitureLayout } from "../state/furnitureLayout";
 import { RoomOutline, DimensionLabels, bounds } from "./FloorPlanSvg";
 
-const TYPE_COLOR: Record<FurnitureItem["type"], string> = {
+const FACING_COLOR = "#FFFFFF";
+
+// Which types have a meaningful "front" worth showing. Both PS5 and racing
+// sim are rotation-driven — rotating the item actually turns the TV/monitor
+// bank in the 3D scene, matching this arrow exactly.
+function facingVector(item: FurnitureItem): [number, number] | null {
+  if (item.renderType === "racingSim" || item.renderType === "ps5") {
+    const theta = (item.rotationSteps ?? 0) * (Math.PI / 2);
+    const half = item.height / 2; // intrinsic — matches the 3D scene's own farZ math exactly
+    return [half * Math.sin(theta) * 1.35, half * Math.cos(theta) * 1.35];
+  }
+  return null;
+}
+
+const TYPE_COLOR: Record<RenderType, string> = {
   pool: "#2E7D32",
   ps5: "#39FF88",
   racingSim: "#FF9F43",
   counter: "#9AA4B2",
   cabinet: "#B88A4A",
+  generic: "#8899AA",
 };
+
+function colorFor(item: FurnitureItem): string {
+  return item.renderType === "generic" && item.color ? item.color : TYPE_COLOR[item.renderType];
+}
 
 const INVALID_COLOR = "#FF3B30";
 const GUIDE_COLOR = "#FFD54A";
@@ -230,8 +250,9 @@ export function DesignCanvas() {
         {items.map((item) => {
           const rect = rects.get(item.id)!;
           const invalid = invalidIds.has(item.id);
-          const color = invalid ? INVALID_COLOR : TYPE_COLOR[item.type];
+          const color = invalid ? INVALID_COLOR : colorFor(item);
           const handleSize = Math.min(0.9, rect.w / 3, rect.h / 3);
+          const facing = facingVector(item);
           return (
             <g key={item.id}>
               <rect
@@ -248,11 +269,14 @@ export function DesignCanvas() {
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
               />
+              {facing && (
+                <FacingArrow cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} dx={facing[0]} dy={facing[1]} />
+              )}
               <text
                 x={rect.x + rect.w / 2}
                 y={rect.y + rect.h / 2}
                 fill="#F2F4F7"
-                fontSize={item.type === "pool" ? 0.7 : 0.6}
+                fontSize={item.renderType === "pool" ? 0.7 : 0.6}
                 fontWeight={700}
                 textAnchor="middle"
                 style={{ pointerEvents: "none", userSelect: "none" }}
@@ -381,6 +405,34 @@ function GapGuide({ x1, y1, x2, y2, value }: { x1: number; y1: number; x2: numbe
       <text x={midX} y={midY} fill={GUIDE_COLOR} fontSize={0.7} fontWeight={700} textAnchor="middle" dominantBaseline="central">
         {value.toFixed(1)} ft
       </text>
+    </g>
+  );
+}
+
+// A short arrow from an item's center toward whichever direction its
+// screen/TV currently faces — drawn on every render (not just while
+// dragging), since the whole point is to see it *before* deciding which
+// way to rotate, not after.
+function FacingArrow({ cx, cy, dx, dy }: { cx: number; cy: number; dx: number; dy: number }) {
+  const tipX = cx + dx;
+  const tipY = cy + dy;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const px = -uy;
+  const py = ux;
+  const headLen = 0.6;
+  const headWidth = 0.4;
+  const baseX = tipX - ux * headLen;
+  const baseY = tipY - uy * headLen;
+  const p1x = baseX + (px * headWidth) / 2;
+  const p1y = baseY + (py * headWidth) / 2;
+  const p2x = baseX - (px * headWidth) / 2;
+  const p2y = baseY - (py * headWidth) / 2;
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <line x1={cx} y1={cy} x2={baseX} y2={baseY} stroke={FACING_COLOR} strokeWidth={0.14} />
+      <polygon points={`${tipX},${tipY} ${p1x},${p1y} ${p2x},${p2y}`} fill={FACING_COLOR} />
     </g>
   );
 }

@@ -1,4 +1,3 @@
-import { EXPENSE_ITEMS } from "../config/expenses";
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
 
 export interface ExpenseRow {
@@ -10,27 +9,33 @@ export interface ExpenseRow {
   finLarge: number;
 }
 
+// Keyed by expense_items id — that item list is now dynamic (admin-managed
+// via expenseCatalog.ts), so this file doesn't need to know it; it just
+// stores/normalizes whatever rows exist. Callers default a missing row to
+// emptyRow() when reading (getRow), so a newly-added item just works.
 export type ExpenseState = Record<string, ExpenseRow>;
 export type PropertyKey = "small" | "large";
 
 const STORAGE_KEY = "gorilla8-expenses-v1";
 const SUPABASE_ROW_ID = "singleton";
 
-function emptyRow(): ExpenseRow {
+export function emptyRow(): ExpenseRow {
   return { qtySmall: 0, qtyLarge: 0, expSmall: 0, expLarge: 0, finSmall: 0, finLarge: 0 };
 }
 
+export function getRow(state: ExpenseState, id: string): ExpenseRow {
+  return state[id] ?? emptyRow();
+}
+
 export function createEmptyState(): ExpenseState {
-  const state: ExpenseState = {};
-  for (const item of EXPENSE_ITEMS) state[item.id] = emptyRow();
-  return state;
+  return {};
 }
 
 function normalize(raw: Partial<ExpenseState> | null | undefined): ExpenseState {
-  const state = createEmptyState();
-  if (!raw) return state;
-  for (const item of EXPENSE_ITEMS) {
-    if (raw[item.id]) state[item.id] = { ...emptyRow(), ...raw[item.id] };
+  if (!raw) return {};
+  const state: ExpenseState = {};
+  for (const [id, row] of Object.entries(raw)) {
+    if (row) state[id] = { ...emptyRow(), ...row };
   }
   return state;
 }

@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from "./supabaseClient";
-import type { FurnitureItem } from "../config/layout";
+import { normalizeFurnitureItem, type FurnitureItem } from "../config/layout";
 
 // The admin-published furniture layout — becomes the baseline everyone sees
 // on the Floor Plan page (and the Walkthrough's starting point), until the
@@ -22,7 +22,9 @@ const SUPABASE_ROW_ID = "default";
 function loadLocalBackup(): FurnitureItem[] | null {
   try {
     const raw = window.localStorage.getItem(LOCAL_BACKUP_KEY);
-    return raw ? (JSON.parse(raw) as FurnitureItem[]) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as unknown[];
+    return parsed.map(normalizeFurnitureItem);
   } catch {
     return null;
   }
@@ -44,7 +46,7 @@ export async function loadPublishedLayout(): Promise<FurnitureItem[] | null> {
     try {
       const { data, error } = await supabase.from("furniture_layout").select("data").eq("id", SUPABASE_ROW_ID).maybeSingle();
       if (!error && data?.data) {
-        const items = data.data as FurnitureItem[];
+        const items = (data.data as unknown[]).map(normalizeFurnitureItem);
         saveLocalBackup(items);
         return items;
       }
@@ -55,17 +57,27 @@ export async function loadPublishedLayout(): Promise<FurnitureItem[] | null> {
   return loadLocalBackup();
 }
 
-export async function publishLayout(items: FurnitureItem[]): Promise<boolean> {
+export interface PublishResult {
+  ok: boolean;
+  error?: string; // human-readable reason, surfaced in the UI so a failure is diagnosable without opening devtools
+}
+
+export async function publishLayout(items: FurnitureItem[]): Promise<PublishResult> {
   saveLocalBackup(items);
-  if (isSupabaseConfigured && supabase) {
-    try {
-      const { error } = await supabase
-        .from("furniture_layout")
-        .upsert({ id: SUPABASE_ROW_ID, data: items, updated_at: new Date().toISOString() });
-      return !error;
-    } catch {
-      return false;
-    }
+  if (!isSupabaseConfigured || !supabase) {
+    return { ok: false, error: "Supabase isn't configured (missing VITE_SUPABASE_URL/ANON_KEY)." };
   }
-  return false; // local-only backup saved, but nothing actually shared with other visitors
+  try {
+    const { error } = await supabase
+      .from("furniture_layout")
+      .upsert({ id: SUPABASE_ROW_ID, data: items, updated_at: new Date().toISOString() });
+    if (error) {
+      console.error("publishLayout failed:", error);
+      return { ok: false, error: error.message };
+    }
+    return { ok: true };
+  } catch (err) {
+    console.error("publishLayout threw:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Unknown error" };
+  }
 }

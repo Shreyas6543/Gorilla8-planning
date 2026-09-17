@@ -1,55 +1,35 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { PointerLockControls, useTexture, useGLTF, Environment } from "@react-three/drei";
+import { PointerLockControls, useTexture, useGLTF, Environment, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { buildWalls, isInsideRoom, EYE_HEIGHT_FT, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
 import { OUTER_POLYGON, BEAMS, ENTRANCE } from "../../config/floorplan";
 import { footprint, type FurnitureItem } from "../../config/layout";
+import { BUILTIN_CATALOG } from "../../lib/furnitureCatalog";
 import { FirstPersonController } from "./FirstPersonController";
 import { useFurnitureLayout } from "../../state/furnitureLayout";
 
-// Wraps a furniture component so it turns 90° in place around its true
-// on-floor footprint center — the Design page lets any item be rotated,
-// so this keeps the 3D view consistent with the 2D one. `children` gets
-// the item's own (unrotated, intrinsic) width/height re-centered at the
-// local origin; the outer group does the real-world placement + turn.
+function defaultElevationFor(renderType: string): number {
+  return BUILTIN_CATALOG.find((c) => c.renderType === renderType)?.defaultElevation ?? 4;
+}
+
+// Wraps a furniture component so it turns in place (a real 0/90/180/270°
+// turn, not a 2-state flip) around its true on-floor footprint center —
+// the Design page lets any item be rotated, so this keeps the 3D view
+// consistent with the 2D one. `children` gets the item's own (0°,
+// intrinsic) width/height re-centered at the local origin; the outer
+// group does the real-world placement + turn.
 function RotatedFootprint({ item, children }: { item: FurnitureItem; children: (x: number, y: number) => ReactNode }) {
   const f = footprint(item);
   const centerX = item.x + f.w / 2;
   const centerZ = item.y + f.h / 2;
   return (
-    <group position={[centerX, 0, centerZ]} rotation={[0, item.rotated ? Math.PI / 2 : 0, 0]}>
+    <group position={[centerX, 0, centerZ]} rotation={[0, (item.rotationSteps ?? 0) * (Math.PI / 2), 0]}>
       {children(-item.width / 2, -item.height / 2)}
     </group>
   );
-}
-
-// Real vertical walls a PS5 could plausibly back onto, for auto-detecting
-// which way its TV should face once its position comes from the editable
-// layout (Design page) instead of a fixed config — picks whichever wall
-// edge is closest to the station's current x-position.
-const VERTICAL_WALLS = [0, 16.5, 36.7];
-function nearestWallFacing(x: number, width: number) {
-  let wallX = VERTICAL_WALLS[0];
-  let facePositiveX = true;
-  let best = Infinity;
-  for (const w of VERTICAL_WALLS) {
-    const distLeft = Math.abs(x - w);
-    const distRight = Math.abs(x + width - w);
-    if (distLeft < best) {
-      best = distLeft;
-      wallX = w;
-      facePositiveX = true;
-    }
-    if (distRight < best) {
-      best = distRight;
-      wallX = w;
-      facePositiveX = false;
-    }
-  }
-  return { wallX, facePositiveX };
 }
 
 // Materials sampled from a real walkthrough video of the actual space
@@ -221,23 +201,19 @@ function enableShadows(root: THREE.Object3D) {
   });
 }
 
-// Real pool table height (rail top ~2.5ft off the floor), sourced from a
-// free CC-BY model (see credit in WalkthroughPage) rather than hand-built
-// primitives — fixes the "boxy pocket" look flat geometry couldn't avoid.
-const POOL_TABLE_HEIGHT_FT = 2.55;
-const POOL_TABLE_SURFACE_Y = 2.45; // where the felt/rack sits, used by BallRackAndCues
-
 function PoolTable({
   x,
   y,
   width,
   height,
+  elevation,
   showRack,
 }: {
   x: number;
   y: number;
   width: number;
   height: number;
+  elevation: number;
   showRack?: boolean;
 }) {
   const cx = x + width / 2;
@@ -248,14 +224,15 @@ function PoolTable({
     enableShadows(clone);
     return clone;
   }, [scene]);
-  const fit = useMemo(() => fitFootprint(model, width, height, POOL_TABLE_HEIGHT_FT), [model, width, height]);
+  const fit = useMemo(() => fitFootprint(model, width, height, elevation), [model, width, height, elevation]);
+  const surfaceY = elevation - 0.1; // where the felt/rack sits, just under the rail top
 
   return (
     <group position={[cx, 0, cz]}>
       <group rotation={[0, fit.rotationY, 0]} scale={fit.scale}>
         <primitive object={model} position={fit.offset} />
       </group>
-      {showRack && <BallRackAndCues width={width} height={height} surfaceY={POOL_TABLE_SURFACE_Y} />}
+      {showRack && <BallRackAndCues width={width} height={height} surfaceY={surfaceY} />}
     </group>
   );
 }
@@ -344,110 +321,353 @@ function BeanBagChair({ diameter }: { diameter: number }) {
   );
 }
 
-// wallX: the world-X coordinate of the wall this station backs onto.
-// facePositiveX: true if the TV should face toward +X (wall is on the low-X
-// side), false if it faces -X (wall is on the high-X side).
+// Real chair (CC0, Poly Pizza — Quaternius "Office Chair"), placed facing
+// +Z toward the wheel/monitors. Fitted to a generic gaming/office-chair
+// footprint since the model's own proportions are already close to real.
+const CHAIR_WIDTH_FT = 2.0;
+const CHAIR_DEPTH_FT = 2.0;
+const CHAIR_HEIGHT_FT = 3.9;
+
+function GamingChair({ z }: { z: number }) {
+  const { scene } = useGLTF("/models/office_chair_raw.glb");
+  const model = useMemo(() => {
+    const clone = scene.clone(true);
+    enableShadows(clone);
+    return clone;
+  }, [scene]);
+  const fit = useMemo(() => fitFootprint(model, CHAIR_WIDTH_FT, CHAIR_DEPTH_FT, CHAIR_HEIGHT_FT), [model]);
+  return (
+    <group position={[0, 0, z]}>
+      <group rotation={[0, fit.rotationY, 0]} scale={fit.scale}>
+        <primitive object={model} position={fit.offset} />
+      </group>
+    </group>
+  );
+}
+
+// Laid out along local Z, same convention as every other rotatable type
+// (RacingSim etc): TV at the far edge, bean bag near the near edge, facing
+// back toward it. Rotation is handled entirely by the outer
+// RotatedFootprint wrapper via rotationSteps — this used to instead
+// auto-detect "the nearest real wall" from world position, which seemed
+// safer (a TV could never end up unmounted in open air) but was actually
+// buggy (it only ever checked the 3 vertical walls, so a PS5 dragged next
+// to a horizontal wall like the 35ft one was silently ignored and always
+// pointed at whichever vertical wall was closest instead — wrong). Shreyas
+// explicitly asked to drop the auto-detection and just rotate it manually,
+// which also fixes that bug outright and makes PS5 behave exactly like
+// every other item (rotate button + facing arrow both do something real).
 function PS5Station({
   x,
   y,
   width,
   height,
-  wallX,
-  facePositiveX,
+  elevation,
 }: {
   x: number;
   y: number;
   width: number;
   height: number;
-  wallX: number;
-  facePositiveX: boolean;
+  elevation: number;
 }) {
-  const cz = y + height / 2;
-  const tvX = wallX + (facePositiveX ? 0.1 : -0.1);
-  const consoleX = wallX + (facePositiveX ? 0.45 : -0.45);
-  const chairX = x + width / 2 + (facePositiveX ? 1.3 : -1.3);
-  const dir = facePositiveX ? 1 : -1;
+  const cx = x + width / 2;
+  const nearZ = y;
+  const farZ = y + height;
+  const tvZ = farZ - 0.1;
+  const consoleZ = farZ - 0.5;
+  const chairZ = nearZ + 1.4;
+  // This assembly's internals (console/TV/bean-bag) have fixed absolute Y
+  // positions, not a single "height" — elevation edits scale the whole
+  // group vertically around the floor instead of precisely reflowing each
+  // part. A known simplification; the built-in proportions still look right
+  // at the default elevation.
+  const verticalScale = elevation / defaultElevationFor("ps5");
 
   return (
-    <group>
+    <group scale={[1, verticalScale, 1]}>
       {/* Console stand */}
-      <mesh position={[consoleX, 0.7, cz]} castShadow>
-        <boxGeometry args={[0.8, 1.4, 2.2]} />
+      <mesh position={[cx, 0.7, consoleZ]} castShadow>
+        <boxGeometry args={[2.2, 1.4, 0.8]} />
         <meshStandardMaterial color="#2b2e33" roughness={0.5} />
       </mesh>
       {/* PS5-style tower: white body flanking a black center vent strip */}
-      <mesh position={[consoleX + dir * 0.15, 1.55, cz - 0.5]} rotation={[0, 0, dir * 0.18]}>
-        <boxGeometry args={[0.5, 0.9, 0.35]} />
+      <mesh position={[cx + 0.5, 1.55, consoleZ + 0.15]} rotation={[0, 0, 0.18]}>
+        <boxGeometry args={[0.35, 0.9, 0.5]} />
         <meshStandardMaterial color="#EDEDED" roughness={0.3} />
       </mesh>
-      <mesh position={[consoleX + dir * 0.15, 1.55, cz - 0.5]}>
-        <boxGeometry args={[0.12, 0.85, 0.3]} />
+      <mesh position={[cx + 0.5, 1.55, consoleZ + 0.15]}>
+        <boxGeometry args={[0.3, 0.85, 0.12]} />
         <meshStandardMaterial color="#111214" roughness={0.4} />
       </mesh>
-      {/* TV panel, mounted on the wall — real model, faces toward the room */}
-      <group position={[tvX, 4, cz]} rotation={[0, facePositiveX ? Math.PI / 2 : -Math.PI / 2, 0]}>
+      {/* TV panel, at the far edge — real model, facing back toward the
+          bean bag (180° from its own default +Z facing) */}
+      <group position={[cx, 4, tvZ]} rotation={[0, Math.PI, 0]}>
         <TVPanel />
       </group>
-      {/* Bean bag chair — real model, sitting low */}
-      <group position={[chairX, 0, cz]}>
+      {/* Bean bag chair — real model, sitting low, facing the TV */}
+      <group position={[cx, 0, chairZ]}>
         <BeanBagChair diameter={2.2} />
       </group>
     </group>
   );
 }
 
-function RacingSim({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
-  const cx = x + width / 2;
-  const nearZ = y; // toward entrance
-  const farZ = y + height; // away from entrance
+// A simple procedural "road receding into sky" texture, painted once onto
+// an offscreen canvas — stands in for real racing-game footage on the
+// triple-monitor bank below (a static image, sampled from the reference
+// photo's overall look rather than an actual game frame).
+function useRoadScreenTexture(): THREE.Texture {
+  return useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext("2d")!;
+    const sky = ctx.createLinearGradient(0, 0, 0, 60);
+    sky.addColorStop(0, "#9FC6E0");
+    sky.addColorStop(1, "#D8E7EE");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, 128, 60);
+    const road = ctx.createLinearGradient(0, 60, 0, 128);
+    road.addColorStop(0, "#5b5e63");
+    road.addColorStop(1, "#2b2d30");
+    ctx.fillStyle = road;
+    ctx.fillRect(0, 60, 128, 68);
+    ctx.strokeStyle = "#e8e8e8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(64, 60);
+    ctx.lineTo(58, 128);
+    ctx.moveTo(64, 60);
+    ctx.lineTo(70, 128);
+    ctx.stroke();
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, []);
+}
+
+// Shared by RacingScreen and the hinge groups below it, so the panels are
+// always sized/rotated consistently — the side panels hinge at exactly
+// ±SCREEN_W/2 from center, folded by SCREEN_FOLD (30°) each, giving a real
+// 150° angle between adjacent panels (180° flat, minus the 30° fold).
+const SCREEN_W = 2.3;
+const SCREEN_FOLD = Math.PI / 6;
+
+// One 32"-ish curved-bank monitor: dark bezel + glowing "screen" + a thin
+// mounting arm underneath, angled inward for the wraparound triple-screen
+// look from the reference photo.
+function RacingScreen({ x, rotY, texture }: { x: number; rotY: number; texture: THREE.Texture }) {
+  const w = SCREEN_W;
+  const h = 1.3;
   return (
-    <group>
-      {/* Screen, at the far end */}
-      <mesh position={[cx, 3, farZ - 0.3]}>
-        <boxGeometry args={[4, 2.2, 0.15]} />
-        <meshStandardMaterial color="#0a0a0a" emissive="#FF9F43" emissiveIntensity={0.15} />
+    <group position={[x, 3.55, 0]} rotation={[0, rotY, 0]}>
+      <mesh castShadow>
+        <boxGeometry args={[w + 0.12, h + 0.12, 0.07]} />
+        <meshStandardMaterial color="#0a0a0a" roughness={0.5} />
       </mesh>
-      {/* Rig frame legs */}
-      {[-1.1, 1.1].map((dx) => (
-        <mesh key={dx} position={[cx + dx, 0.4, nearZ + 1.2]}>
-          <boxGeometry args={[0.15, 0.8, 2.4]} />
-          <meshStandardMaterial color="#1a1c1f" roughness={0.4} metalness={0.3} />
-        </mesh>
-      ))}
-      {/* Seat */}
-      <mesh position={[cx, 1.3, nearZ + 2.6]} rotation={[0.3, 0, 0]} castShadow>
-        <boxGeometry args={[1.6, 1.4, 0.3]} />
-        <meshStandardMaterial color="#1a1c1f" roughness={0.6} />
+      <mesh position={[0, 0, 0.04]}>
+        <planeGeometry args={[w, h]} />
+        <meshBasicMaterial map={texture} toneMapped={false} />
       </mesh>
-      <mesh position={[cx, 0.75, nearZ + 2]} castShadow>
-        <boxGeometry args={[1.6, 0.15, 1.6]} />
-        <meshStandardMaterial color="#1a1c1f" roughness={0.6} />
-      </mesh>
-      {/* Pedals */}
-      <mesh position={[cx, 0.15, nearZ + 3.6]}>
-        <boxGeometry args={[0.9, 0.3, 0.5]} />
-        <meshStandardMaterial color="#2b2e33" />
-      </mesh>
-      {/* Steering wheel */}
-      <mesh position={[cx, 2, nearZ + 3.6]} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[0.6, 0.08, 12, 24]} />
-        <meshStandardMaterial color="#FF9F43" />
+      <mesh position={[0, -h / 2 - 0.22, -0.04]}>
+        <boxGeometry args={[0.08, 0.45, 0.08]} />
+        <meshStandardMaterial color="#111214" metalness={0.6} roughness={0.4} />
       </mesh>
     </group>
   );
 }
 
-function Counter({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+// Gaming PC tower with 3 RGB fan rings visible through a tinted glass
+// panel — sits beside the monitor stand, matching the reference photo.
+function PCTower({ x, z }: { x: number; z: number }) {
+  const fanColors = ["#4C6BFF", "#B24CFF", "#FF4C9E"];
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 0.9, 0]} castShadow>
+        <boxGeometry args={[0.7, 1.8, 1.4]} />
+        <meshStandardMaterial color="#0d0d0f" roughness={0.4} metalness={0.3} />
+      </mesh>
+      <mesh position={[0.36, 0.9, 0]}>
+        <boxGeometry args={[0.02, 1.6, 1.2]} />
+        <meshPhysicalMaterial color="#101820" transparent opacity={0.35} roughness={0.1} />
+      </mesh>
+      {[0.5, 1.0, 1.5].map((fy, i) => (
+        <mesh key={fy} position={[0.37, fy, 0]} rotation={[0, Math.PI / 2, 0]}>
+          <torusGeometry args={[0.22, 0.05, 8, 16]} />
+          <meshStandardMaterial color={fanColors[i]} emissive={fanColors[i]} emissiveIntensity={1.2} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+// Full sim rig: black tube chassis, low reclined bucket seat, pedal deck,
+// wheel + paddles, gear shifter, triple curved monitors, and a side-mounted
+// RGB gaming PC — rebuilt from a real Playseat-style reference photo.
+function RacingSim({
+  x,
+  y,
+  width,
+  height,
+  elevation,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  elevation: number;
+}) {
+  const cx = x + width / 2;
+  const halfW = width / 2;
+  const farZ = y + height; // away from entrance — monitor end; the whole rig
+  // clusters close to this end (compact, like the real reference photos —
+  // NOT spread across the full footprint depth with a dead gap in the
+  // middle). Measuring backward from the monitor: seat is furthest back,
+  // then (moving toward the screen) gear shifter, pedals, wheel, PC tower,
+  // monitor — the chair sits right up against the rig, wheel in front of
+  // the chair, exactly as specced.
+  const seatZ = farZ - 3.1;
+  const gearZ = farZ - 2.3;
+  const pedalZ = farZ - 2.0;
+  const wheelPostZ = farZ - 1.7;
+  const wheelZ = farZ - 1.15;
+  const pcZ = farZ - 1.0;
+  const monitorZ = farZ - 0.45;
+  const railCenterZ = farZ - 2.0;
+  const railLen = 2.6;
+
+  const roadTexture = useRoadScreenTexture();
+  // Same simplification as PS5Station — scales the whole rig vertically
+  // from the floor rather than reflowing each fixed absolute Y position.
+  const verticalScale = elevation / defaultElevationFor("racingSim");
+  const frameMat = <meshStandardMaterial color="#131417" metalness={0.6} roughness={0.35} />;
+
+  return (
+    <group position={[cx, 0, 0]} scale={[1, verticalScale, 1]}>
+      {/* Chassis side rails, under the seat-to-wheel span */}
+      {[-0.9, 0.9].map((dx) => (
+        <mesh key={dx} position={[dx, 0.28, railCenterZ]} rotation={[Math.PI / 2, 0, 0]} castShadow>
+          <cylinderGeometry args={[0.05, 0.05, railLen, 8]} />
+          {frameMat}
+        </mesh>
+      ))}
+      {/* Cross braces */}
+      {[railCenterZ - railLen / 2, railCenterZ + railLen / 2].map((bz) => (
+        <mesh key={bz} position={[0, 0.28, bz]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.045, 0.045, 1.8, 8]} />
+          {frameMat}
+        </mesh>
+      ))}
+
+      {/* Pedal deck — floor mounted, slight rearward tilt, right under the wheel */}
+      <group position={[0, 0, pedalZ]} rotation={[-0.22, 0, 0]}>
+        <mesh position={[0, 0.16, 0]} castShadow>
+          <boxGeometry args={[1.3, 0.14, 1.0]} />
+          <meshStandardMaterial color="#161616" roughness={0.6} />
+        </mesh>
+        {[-0.4, 0, 0.4].map((dx) => (
+          <mesh key={dx} position={[dx, 0.27, 0.28]} rotation={[-0.35, 0, 0]}>
+            <boxGeometry args={[0.22, 0.05, 0.55]} />
+            <meshStandardMaterial color="#C7CBCE" metalness={0.6} roughness={0.3} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Gear shifter, mounted to the side, between seat and pedals */}
+      <group position={[-halfW * 0.6, 0.7, gearZ]}>
+        <mesh castShadow>
+          <boxGeometry args={[0.22, 0.22, 0.32]} />
+          <meshStandardMaterial color="#161616" roughness={0.6} />
+        </mesh>
+        <mesh position={[0, 0.3, 0]} rotation={[0.25, 0, 0]}>
+          <cylinderGeometry args={[0.025, 0.025, 0.45, 8]} />
+          <meshStandardMaterial color="#2a2a2a" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 0.55, 0.06]}>
+          <sphereGeometry args={[0.065, 10, 10]} />
+          <meshStandardMaterial color="#0a0a0a" roughness={0.3} />
+        </mesh>
+      </group>
+
+      {/* Wheel-mount post, leaning back toward the seat */}
+      <mesh position={[0, 1.05, wheelPostZ]} rotation={[0.4, 0, 0]}>
+        <cylinderGeometry args={[0.06, 0.06, 2.0, 8]} />
+        {frameMat}
+      </mesh>
+
+      {/* Steering wheel, hub, red top marker, paddle shifters — right in
+          front of the seat, between the seat and the monitors */}
+      <group position={[0, 2.15, wheelZ]} rotation={[0.15, 0, 0]}>
+        <mesh castShadow>
+          <torusGeometry args={[0.55, 0.075, 14, 28]} />
+          <meshStandardMaterial color="#161616" roughness={0.5} />
+        </mesh>
+        <mesh position={[0, 0, 0.03]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.18, 0.18, 0.08, 16]} />
+          <meshStandardMaterial color="#0a0a0a" roughness={0.4} />
+        </mesh>
+        <mesh position={[0, 0.55, 0.04]}>
+          <boxGeometry args={[0.12, 0.05, 0.02]} />
+          <meshStandardMaterial color="#D6202A" emissive="#D6202A" emissiveIntensity={0.4} />
+        </mesh>
+        {[-1, 1].map((s) => (
+          <mesh key={s} position={[s * 0.45, 0.22, 0.05]} rotation={[0, 0, s * 0.3]}>
+            <boxGeometry args={[0.35, 0.06, 0.03]} />
+            <meshStandardMaterial color="#2a2a2a" metalness={0.5} roughness={0.4} />
+          </mesh>
+        ))}
+      </group>
+
+      {/* Real chair model (CC0, Poly Pizza) — a placeholder gaming/office
+          chair for now, stands in for a real Playseat-style racing seat
+          until/unless a proper one gets built or sourced. Faces the wheel. */}
+      <GamingChair z={seatZ} />
+
+      {/* Triple curved monitor bank — main screen centered, the other two
+          hinged exactly at its edges (not floating with a gap) and folded
+          30° each, giving a real 150° angle between adjacent panels,
+          curving toward the driver's seat. */}
+      <group position={[0, 0, monitorZ]}>
+        <RacingScreen x={0} rotY={0} texture={roadTexture} />
+        {/* Left panel: hinge sits at the center panel's left edge; the
+            panel itself is shifted so its inner edge lands exactly on that
+            hinge, so rotating never opens a gap. */}
+        <group position={[-SCREEN_W / 2, 0, 0]} rotation={[0, -SCREEN_FOLD, 0]}>
+          <group position={[-SCREEN_W / 2, 0, 0]}>
+            <RacingScreen x={0} rotY={0} texture={roadTexture} />
+          </group>
+        </group>
+        <group position={[SCREEN_W / 2, 0, 0]} rotation={[0, SCREEN_FOLD, 0]}>
+          <group position={[SCREEN_W / 2, 0, 0]}>
+            <RacingScreen x={0} rotY={0} texture={roadTexture} />
+          </group>
+        </group>
+        {/* Stand posts */}
+        {[-0.85, 0.85].map((dx) => (
+          <mesh key={dx} position={[dx, 1.85, 0.1]} castShadow>
+            <boxGeometry args={[0.09, 3.7, 0.09]} />
+            {frameMat}
+          </mesh>
+        ))}
+      </group>
+
+      {/* Gaming PC tower, beside the monitor stand */}
+      <PCTower x={halfW - 0.9} z={pcZ} />
+    </group>
+  );
+}
+
+function Counter({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
   const cx = x + width / 2;
   const cz = y + height / 2;
   return (
     <group>
-      <mesh position={[cx, 1.6, cz]} castShadow>
-        <boxGeometry args={[width, 3.2, height]} />
+      <mesh position={[cx, elevation / 2, cz]} castShadow>
+        <boxGeometry args={[width, elevation, height]} />
         <meshStandardMaterial color="#9AA4B2" roughness={0.6} />
       </mesh>
       {/* Countertop overhang */}
-      <mesh position={[cx, 3.3, cz]}>
+      <mesh position={[cx, elevation + 0.1, cz]}>
         <boxGeometry args={[width + 0.2, 0.15, height + 0.2]} />
         <meshStandardMaterial color="#e8e6df" roughness={0.3} />
       </mesh>
@@ -458,10 +678,10 @@ function Counter({ x, y, width, height }: { x: number; y: number; width: number;
 // Storage cabinet, styled to match the counter right beside it (same
 // countertop cap + body tone) so the two read as one deliberate nook —
 // two-door front with a center seam and simple handles.
-function Cabinet({ x, y, width, height }: { x: number; y: number; width: number; height: number }) {
+function Cabinet({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
   const cx = x + width / 2;
   const cz = y + height / 2;
-  const bodyHeight = 6; // tall storage cabinet, floor to just under the counter's sightline
+  const bodyHeight = elevation;
   return (
     <group position={[cx, 0, cz]}>
       <mesh position={[0, bodyHeight / 2, 0]} castShadow>
@@ -490,6 +710,42 @@ function Cabinet({ x, y, width, height }: { x: number; y: number; width: number;
   );
 }
 
+// Any admin-created object type that isn't one of the 5 built-ins gets
+// this: a plain box sized to its footprint + elevation, colored per the
+// catalog entry, with its name floating above it. No bespoke model —
+// that's the honest tradeoff for "add whatever objects you want."
+function GenericObject({
+  x,
+  y,
+  width,
+  height,
+  elevation,
+  color,
+  label,
+}: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  elevation: number;
+  color: string;
+  label: string;
+}) {
+  const cx = x + width / 2;
+  const cz = y + height / 2;
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh position={[0, elevation / 2, 0]} castShadow>
+        <boxGeometry args={[width, elevation, height]} />
+        <meshStandardMaterial color={color} roughness={0.6} />
+      </mesh>
+      <Text position={[0, elevation + 0.5, 0]} fontSize={0.5} color="#ffffff" anchorX="center" anchorY="middle">
+        {label}
+      </Text>
+    </group>
+  );
+}
+
 function EntranceThreshold() {
   const cx = (ENTRANCE.from[0] + ENTRANCE.to[0]) / 2;
   const width = Math.abs(ENTRANCE.to[0] - ENTRANCE.from[0]);
@@ -504,11 +760,12 @@ function EntranceThreshold() {
 export function WalkthroughScene() {
   const locked = useRef(false);
   const { items } = useFurnitureLayout();
-  const poolTables = items.filter((i) => i.type === "pool");
-  const ps5Stations = items.filter((i) => i.type === "ps5");
-  const racingSim = items.find((i) => i.type === "racingSim");
-  const counter = items.find((i) => i.type === "counter");
-  const cabinet = items.find((i) => i.type === "cabinet");
+  const poolTables = items.filter((i) => i.renderType === "pool");
+  const ps5Stations = items.filter((i) => i.renderType === "ps5");
+  const racingSims = items.filter((i) => i.renderType === "racingSim");
+  const counters = items.filter((i) => i.renderType === "counter");
+  const cabinets = items.filter((i) => i.renderType === "cabinet");
+  const generics = items.filter((i) => i.renderType === "generic");
 
   return (
     <>
@@ -532,28 +789,38 @@ export function WalkthroughScene() {
 
       {poolTables.map((t, i) => (
         <RotatedFootprint key={t.id} item={t}>
-          {(x, y) => <PoolTable x={x} y={y} width={t.width} height={t.height} showRack={i === 0} />}
+          {(x, y) => <PoolTable x={x} y={y} width={t.width} height={t.height} elevation={t.elevation} showRack={i === 0} />}
         </RotatedFootprint>
       ))}
 
-      {/* PS5 footprints are square (6x6), so "rotating" one changes nothing
-          about its floor space — its facing is auto-detected from position
-          instead (nearestWallFacing), not from the rotate handle. */}
-      {ps5Stations.map((p) => {
-        const f = footprint(p);
-        const { wallX, facePositiveX } = nearestWallFacing(p.x, f.w);
-        return <PS5Station key={p.id} x={p.x} y={p.y} width={f.w} height={f.h} wallX={wallX} facePositiveX={facePositiveX} />;
-      })}
+      {ps5Stations.map((p) => (
+        <RotatedFootprint key={p.id} item={p}>
+          {(x, y) => <PS5Station x={x} y={y} width={p.width} height={p.height} elevation={p.elevation} />}
+        </RotatedFootprint>
+      ))}
 
-      {racingSim && (
-        <RotatedFootprint item={racingSim}>{(x, y) => <RacingSim x={x} y={y} width={racingSim.width} height={racingSim.height} />}</RotatedFootprint>
-      )}
-      {counter && (
-        <RotatedFootprint item={counter}>{(x, y) => <Counter x={x} y={y} width={counter.width} height={counter.height} />}</RotatedFootprint>
-      )}
-      {cabinet && (
-        <RotatedFootprint item={cabinet}>{(x, y) => <Cabinet x={x} y={y} width={cabinet.width} height={cabinet.height} />}</RotatedFootprint>
-      )}
+      {racingSims.map((r) => (
+        <RotatedFootprint key={r.id} item={r}>
+          {(x, y) => <RacingSim x={x} y={y} width={r.width} height={r.height} elevation={r.elevation} />}
+        </RotatedFootprint>
+      ))}
+      {counters.map((c) => (
+        <RotatedFootprint key={c.id} item={c}>
+          {(x, y) => <Counter x={x} y={y} width={c.width} height={c.height} elevation={c.elevation} />}
+        </RotatedFootprint>
+      ))}
+      {cabinets.map((c) => (
+        <RotatedFootprint key={c.id} item={c}>
+          {(x, y) => <Cabinet x={x} y={y} width={c.width} height={c.height} elevation={c.elevation} />}
+        </RotatedFootprint>
+      ))}
+      {generics.map((g) => (
+        <RotatedFootprint key={g.id} item={g}>
+          {(x, y) => (
+            <GenericObject x={x} y={y} width={g.width} height={g.height} elevation={g.elevation} color={g.color ?? "#8899AA"} label={g.label} />
+          )}
+        </RotatedFootprint>
+      ))}
 
       <FirstPersonController eyeHeight={EYE_HEIGHT_FT} speed={WALK_SPEED_FT_PER_SEC} />
       <PointerLockControls

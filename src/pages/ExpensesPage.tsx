@@ -1,8 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
+  Button,
   Container,
   Grid,
+  IconButton,
   Paper,
   Stack,
   Table,
@@ -11,21 +13,34 @@ import {
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
+import AddIcon from "@mui/icons-material/Add";
 import { PROPERTIES } from "../config/properties";
-import { EXPENSE_CATEGORIES, EXPENSE_ITEMS } from "../config/expenses";
 import {
-  createEmptyState,
+  getRow,
   loadExpenseState,
   saveExpenseState,
   rowExpectedTotal,
   rowFinalTotal,
   rowIsOrdered,
-  type ExpenseRow,
   type ExpenseState,
   type PropertyKey,
 } from "../lib/expenses";
+import {
+  loadExpenseCatalog,
+  createCategory,
+  deleteCategory,
+  createItem,
+  deleteItem,
+  type ExpenseCategory,
+  type ExpenseItem,
+} from "../lib/expenseCatalog";
 import { isSupabaseConfigured } from "../lib/supabaseClient";
 import { useAdmin } from "../state/adminAuth";
 import { formatINR } from "../lib/calculations";
@@ -110,21 +125,168 @@ const headCellSx = {
   borderBottom: "1px solid rgba(255,255,255,0.12)",
 };
 
+function ManageCatalog({
+  categories,
+  items,
+  onCategoriesChange,
+  onItemsChange,
+}: {
+  categories: ExpenseCategory[];
+  items: ExpenseItem[];
+  onCategoriesChange: (categories: ExpenseCategory[]) => void;
+  onItemsChange: (items: ExpenseItem[]) => void;
+}) {
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newItemName, setNewItemName] = useState<Record<string, string>>({});
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const result = await createCategory(name, categories.length);
+    if (!result.ok || !result.category) {
+      setError(result.error ?? "Couldn't add that category");
+      return;
+    }
+    onCategoriesChange([...categories, result.category]);
+    setNewCategoryName("");
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    const result = await deleteCategory(id);
+    if (!result.ok) {
+      setError(result.error ?? "Couldn't delete that category");
+      return;
+    }
+    onCategoriesChange(categories.filter((c) => c.id !== id));
+  };
+
+  const handleAddItem = async (categoryId: string) => {
+    const name = (newItemName[categoryId] ?? "").trim();
+    if (!name) return;
+    const count = items.filter((i) => i.categoryId === categoryId).length;
+    const result = await createItem(categoryId, name, count);
+    if (!result.ok || !result.item) {
+      setError(result.error ?? "Couldn't add that item");
+      return;
+    }
+    onItemsChange([...items, result.item]);
+    setNewItemName((prev) => ({ ...prev, [categoryId]: "" }));
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    const result = await deleteItem(id);
+    if (!result.ok) {
+      setError(result.error ?? "Couldn't delete that item");
+      return;
+    }
+    onItemsChange(items.filter((i) => i.id !== id));
+  };
+
+  return (
+    <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 4, border: "1px solid rgba(255,159,67,0.3)" }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 800, mb: 1, color: "#FF9F43" }}>
+        Manage categories & items
+      </Typography>
+      {error && (
+        <Typography variant="body2" color="error" sx={{ mb: 1 }}>
+          {error}
+        </Typography>
+      )}
+      <Stack spacing={2}>
+        {categories.map((category) => {
+          const categoryItems = items.filter((i) => i.categoryId === category.id);
+          return (
+            <Box key={category.id}>
+              <Stack direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                  {category.name}
+                </Typography>
+                <Tooltip title={categoryItems.length > 0 ? "Remove all items in this category first" : "Delete category"}>
+                  <span>
+                    <IconButton size="small" onClick={() => handleDeleteCategory(category.id)} disabled={categoryItems.length > 0} sx={{ color: "#FF6B6B" }}>
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
+              <Stack spacing={0.5} sx={{ pl: 1, mt: 0.5 }}>
+                {categoryItems.map((item) => (
+                  <Stack key={item.id} direction="row" sx={{ alignItems: "center", justifyContent: "space-between" }}>
+                    <Typography variant="caption" sx={{ color: "text.secondary" }}>
+                      {item.name}
+                    </Typography>
+                    <IconButton size="small" onClick={() => handleDeleteItem(item.id)} sx={{ color: "#FF6B6B" }}>
+                      <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Stack>
+                ))}
+                <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                  <TextField
+                    size="small"
+                    placeholder="New item name"
+                    value={newItemName[category.id] ?? ""}
+                    onChange={(e) => setNewItemName((prev) => ({ ...prev, [category.id]: e.target.value }))}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddItem(category.id);
+                    }}
+                    sx={{ flex: 1 }}
+                  />
+                  <IconButton size="small" onClick={() => handleAddItem(category.id)}>
+                    <AddIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
+              </Stack>
+            </Box>
+          );
+        })}
+        <Stack direction="row" spacing={1} sx={{ pt: 1, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <TextField
+            size="small"
+            placeholder="New category name"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleAddCategory();
+            }}
+            sx={{ flex: 1, mt: 1 }}
+          />
+          <Button size="small" variant="outlined" startIcon={<AddIcon />} onClick={handleAddCategory} sx={{ mt: 1 }}>
+            Add category
+          </Button>
+        </Stack>
+      </Stack>
+    </Paper>
+  );
+}
+
 export function ExpensesPage() {
   const { isAdmin } = useAdmin();
-  const unlocked = isAdmin;
-  const [state, setState] = useState<ExpenseState>(() => createEmptyState());
+  const [editMode, setEditMode] = useState(false);
+  const unlocked = isAdmin && editMode;
+  const [state, setState] = useState<ExpenseState>({});
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+  const [items, setItems] = useState<ExpenseItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // If admin mode is exited (header chip, or a refresh) while this page had
+  // edit mode on, drop back to view mode too — don't silently re-enter edit
+  // mode next time isAdmin flips back true in the same session.
+  useEffect(() => {
+    if (!isAdmin) setEditMode(false);
+  }, [isAdmin]);
+
   // Initial load — from Supabase if configured, else local backup/defaults.
   useEffect(() => {
     let cancelled = false;
-    loadExpenseState().then((loadedState) => {
+    Promise.all([loadExpenseState(), loadExpenseCatalog()]).then(([loadedState, catalog]) => {
       if (!cancelled) {
         setState(loadedState);
+        setCategories(catalog.categories);
+        setItems(catalog.items);
         setLoaded(true);
       }
     });
@@ -149,8 +311,8 @@ export function ExpensesPage() {
     };
   }, [state, loaded]);
 
-  const updateField = (id: string, field: keyof ExpenseRow, value: number) => {
-    setState((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
+  const updateField = (id: string, field: keyof ExpenseState[string], value: number) => {
+    setState((prev) => ({ ...prev, [id]: { ...getRow(prev, id), [field]: value } }));
   };
 
   const totals = useMemo(() => {
@@ -158,9 +320,8 @@ export function ExpensesPage() {
       small: { expected: 0, final: 0, ordered: 0 },
       large: { expected: 0, final: 0, ordered: 0 },
     };
-    for (const item of EXPENSE_ITEMS) {
-      const row = state[item.id];
-      if (!row) continue;
+    for (const item of items) {
+      const row = getRow(state, item.id);
       (["small", "large"] as PropertyKey[]).forEach((p) => {
         perProperty[p].expected += rowExpectedTotal(row, p);
         perProperty[p].final += rowFinalTotal(row, p);
@@ -168,7 +329,7 @@ export function ExpensesPage() {
       });
     }
     return perProperty;
-  }, [state]);
+  }, [state, items]);
 
   const expectedDelta = totals.large.expected - totals.small.expected;
 
@@ -186,6 +347,10 @@ export function ExpensesPage() {
         <PageHeader subtitle="Setup expenses checklist — expected vs. final (ordered) price, quantities, side by side for both properties. Saved automatically." />
 
         <Stack spacing={3}>
+          {isAdmin && (
+            <ManageCatalog categories={categories} items={items} onCategoriesChange={setCategories} onItemsChange={setItems} />
+          )}
+
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, md: 3 }}>
               <MetricCard
@@ -199,7 +364,7 @@ export function ExpensesPage() {
               <MetricCard
                 label={`${PROPERTIES.small.shortLabel} — ordered so far`}
                 value={formatINR(totals.small.final, { compact: true })}
-                sublabel={`${totals.small.ordered} of ${EXPENSE_ITEMS.length} items`}
+                sublabel={`${totals.small.ordered} of ${items.length} items`}
                 accent={PROPERTIES.small.accent}
               />
             </Grid>
@@ -215,7 +380,7 @@ export function ExpensesPage() {
               <MetricCard
                 label={`${PROPERTIES.large.shortLabel} — ordered so far`}
                 value={formatINR(totals.large.final, { compact: true })}
-                sublabel={`${totals.large.ordered} of ${EXPENSE_ITEMS.length} items`}
+                sublabel={`${totals.large.ordered} of ${items.length} items`}
                 accent={PROPERTIES.large.accent}
               />
             </Grid>
@@ -247,7 +412,9 @@ export function ExpensesPage() {
                     ? "Loading…"
                     : unlocked
                       ? "Edit mode — fill in quantity and price per unit as you get quotes."
-                      : "Read-only. An admin can edit this (tap the logo 5x on any page to unlock admin mode)."}
+                      : isAdmin
+                        ? "Read-only. Click Edit to make changes."
+                        : "Read-only. An admin can edit this (tap the logo 5x on any page to unlock admin mode)."}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -262,24 +429,36 @@ export function ExpensesPage() {
                     {saveStatus === "saving" ? "Saving…" : "Saved"}
                   </Typography>
                 )}
+                {isAdmin && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={editMode ? <VisibilityOutlinedIcon /> : <EditOutlinedIcon />}
+                    onClick={() => setEditMode((e) => !e)}
+                    sx={{ borderColor: "rgba(255,255,255,0.2)" }}
+                  >
+                    {editMode ? "View" : "Edit"}
+                  </Button>
+                )}
               </Stack>
             </Stack>
 
             {/* Mobile card layout (xs–sm) */}
             <Box sx={{ display: { xs: "block", md: "none" }, mt: 2 }}>
-              {EXPENSE_CATEGORIES.map((category) => {
-                const items = EXPENSE_ITEMS.filter((i) => i.category === category);
+              {categories.map((category) => {
+                const categoryItems = items.filter((i) => i.categoryId === category.id);
+                if (categoryItems.length === 0) return null;
                 return (
-                  <Box key={category} sx={{ mb: 2.5 }}>
+                  <Box key={category.id} sx={{ mb: 2.5 }}>
                     <Typography
                       variant="caption"
                       sx={{ fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.04em", color: "text.secondary" }}
                     >
-                      {category}
+                      {category.name}
                     </Typography>
                     <Stack spacing={1} sx={{ mt: 1 }}>
-                      {items.map((item) => {
-                        const row = state[item.id];
+                      {categoryItems.map((item) => {
+                        const row = getRow(state, item.id);
                         return (
                           <Paper key={item.id} elevation={0} sx={{ p: 1.5, borderRadius: 3, border: "1px solid rgba(255,255,255,0.08)" }}>
                             <Typography sx={{ fontWeight: 700, mb: 1 }}>{item.name}</Typography>
@@ -357,14 +536,15 @@ export function ExpensesPage() {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {EXPENSE_CATEGORIES.map((category) => {
-                      const items = EXPENSE_ITEMS.filter((i) => i.category === category);
-                      const catExpSmall = items.reduce((s, i) => s + rowExpectedTotal(state[i.id], "small"), 0);
-                      const catFinSmall = items.reduce((s, i) => s + rowFinalTotal(state[i.id], "small"), 0);
-                      const catExpLarge = items.reduce((s, i) => s + rowExpectedTotal(state[i.id], "large"), 0);
-                      const catFinLarge = items.reduce((s, i) => s + rowFinalTotal(state[i.id], "large"), 0);
+                    {categories.map((category) => {
+                      const categoryItems = items.filter((i) => i.categoryId === category.id);
+                      if (categoryItems.length === 0) return null;
+                      const catExpSmall = categoryItems.reduce((s, i) => s + rowExpectedTotal(getRow(state, i.id), "small"), 0);
+                      const catFinSmall = categoryItems.reduce((s, i) => s + rowFinalTotal(getRow(state, i.id), "small"), 0);
+                      const catExpLarge = categoryItems.reduce((s, i) => s + rowExpectedTotal(getRow(state, i.id), "large"), 0);
+                      const catFinLarge = categoryItems.reduce((s, i) => s + rowFinalTotal(getRow(state, i.id), "large"), 0);
                       return (
-                        <Fragment key={category}>
+                        <Fragment key={category.id}>
                           <TableRow>
                             <TableCell
                               colSpan={7}
@@ -379,11 +559,11 @@ export function ExpensesPage() {
                                 borderTop: "1px solid rgba(255,255,255,0.1)",
                               }}
                             >
-                              {category}
+                              {category.name}
                             </TableCell>
                           </TableRow>
-                          {items.map((item) => {
-                            const row = state[item.id];
+                          {categoryItems.map((item) => {
+                            const row = getRow(state, item.id);
                             return (
                               <TableRow key={item.id} hover>
                                 <TableCell sx={{ color: "text.primary", whiteSpace: "nowrap" }}>{item.name}</TableCell>
@@ -410,7 +590,7 @@ export function ExpensesPage() {
                           })}
                           <TableRow>
                             <TableCell sx={{ color: "text.secondary", fontWeight: 700, fontStyle: "italic" }}>
-                              {category} subtotal
+                              {category.name} subtotal
                             </TableCell>
                             <TableCell colSpan={2} align="right" sx={{ borderLeft: "1px solid rgba(255,255,255,0.06)", color: PROPERTIES.small.accent, fontWeight: 700 }}>
                               {formatINR(catExpSmall, { compact: true })} exp.

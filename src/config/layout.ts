@@ -21,41 +21,103 @@
 //   immediately beside the entrance instead of far across the room).
 // - Minimums: 3 pool tables, 4 PS5 stations. No max.
 //
-// This layout: 3 pool tables (minimum — far less profitable per sq ft than
-// PS5/racing sim), 5 PS5 stations, 1 racing simulator (₹350/hr ÷ 48 sq ft
-// beats ₹200/hr ÷ 36 sq ft, so it's more space-efficient than the PS5s it
-// displaces), 1 counter on the glass wall right beside the entrance —
-// nothing stands between the doorway and it.
+// This is also now the FACTORY fallback: the "real" instance list lives in
+// the furniture_layout Supabase table (see state/furnitureLayout.tsx) and
+// can have any number of instances of any catalog type, added/removed by
+// an admin on the Design page — this file only supplies what to show
+// before that ever loads (or if Supabase isn't configured at all).
+
+import { BUILTIN_CATALOG, type RenderType } from "../lib/furnitureCatalog";
+
+// 0/1/2/3 = 0°/90°/180°/270°. A boolean "rotated" flag can only ever
+// distinguish 2 orientations (it round-trips footprint width/height but
+// can't tell 0° apart from 180°, or 90° apart from 270°) — so an item could
+// never be turned to face the opposite direction along the same axis, only
+// swapped to the other axis. This is why "rotate" used to look like a
+// flip instead of a real 90°-at-a-time turn. Don't go back to a boolean.
+export type RotationSteps = 0 | 1 | 2 | 3;
 
 export interface FurnitureItem {
   id: string;
-  type: "pool" | "ps5" | "racingSim" | "counter" | "cabinet";
+  catalogId: string; // which furniture_catalog entry this instance is of
+  renderType: RenderType;
+  typeName: string; // catalog type name, e.g. "Pool Table" — shown as a caption
   x: number;
   y: number;
-  width: number; // intrinsic — never swapped; see `rotated` for footprint orientation
-  height: number;
-  label: string;
-  rotated?: boolean; // true = footprint is turned 90° (width/height swap on the floor)
+  width: number; // intrinsic footprint (X) — never swapped; see `rotationSteps`
+  height: number; // intrinsic footprint (Z) — never swapped; see `rotationSteps`
+  elevation: number; // vertical height, in ft — the 3D scene's tallness for this instance
+  label: string; // this instance's own label, e.g. "Pool 1"
+  color?: string; // fill/box color — used for "generic" (non-builtin) render types
+  rotationSteps?: RotationSteps; // how many 90° turns from the intrinsic orientation
 }
 
 // The on-floor footprint of an item, accounting for rotation — width/height
-// on the item itself are always the intrinsic (unrotated) dimensions.
-export function footprint(item: Pick<FurnitureItem, "width" | "height" | "rotated">) {
-  return item.rotated ? { w: item.height, h: item.width } : { w: item.width, h: item.height };
+// on the item itself are always the intrinsic (0°) dimensions. Only the
+// parity of rotationSteps matters for footprint (90°/270° swap w/h; 0°/180°
+// don't) — the full step count additionally matters for which *direction*
+// the item faces, used by the 3D scene's actual rotation angle.
+export function footprint(item: Pick<FurnitureItem, "width" | "height" | "rotationSteps">) {
+  const steps = item.rotationSteps ?? 0;
+  return steps % 2 === 1 ? { w: item.height, h: item.width } : { w: item.width, h: item.height };
 }
 
-// Inverse of footprint() — given a desired on-floor width/height (what the
-// user sees and drags), returns the intrinsic width/height to store.
-export function intrinsicFromFootprint(rotated: boolean | undefined, footW: number, footH: number) {
-  return rotated ? { width: footH, height: footW } : { width: footW, height: footH };
+// Maps the OLD (pre-catalog) `type` field to a builtin catalog id, for
+// migrating data saved before renderType/catalogId/elevation existed.
+const OLD_TYPE_TO_CATALOG_ID: Record<string, string> = {
+  pool: "pool-table",
+  ps5: "ps5-station",
+  racingSim: "racing-sim",
+  counter: "counter",
+  cabinet: "cabinet",
+};
+
+// Makes any stored/shared item safe to render, regardless of which schema
+// version wrote it. Anything saved (Supabase, local backup, a pasted share
+// code) before the furniture-catalog rework has `type` instead of
+// `renderType` and no `catalogId`/`elevation` at all — reading that
+// directly crashes FloorPlanSvg (`TYPE_STYLE[undefined].fill`) and makes
+// the Walkthrough's renderType filters come back empty (silently, no
+// crash — just an "empty room"). Call this on every item coming from
+// outside this session's own React state (Supabase, localStorage, an
+// imported code) so old data self-heals instead of needing a manual
+// migration. Already-current items pass through unchanged.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function normalizeFurnitureItem(raw: any): FurnitureItem {
+  if (raw && typeof raw.renderType === "string" && typeof raw.elevation === "number" && typeof raw.catalogId === "string") {
+    // Migrate the old boolean `rotated` flag (2 states) to rotationSteps (4
+    // states) if this item predates the 4-way rotation model — best-effort
+    // guess (true -> 90°, since that was the only non-zero state before).
+    if (typeof raw.rotationSteps !== "number" && "rotated" in raw) {
+      return { ...raw, rotationSteps: raw.rotated ? 1 : 0 } as FurnitureItem;
+    }
+    return raw as FurnitureItem;
+  }
+  const oldType = typeof raw?.type === "string" ? (raw.type as string) : undefined;
+  const catalogId: string = raw?.catalogId ?? (oldType && OLD_TYPE_TO_CATALOG_ID[oldType]) ?? "pool-table";
+  const catalogEntry = BUILTIN_CATALOG.find((c) => c.id === catalogId) ?? BUILTIN_CATALOG[0];
+  return {
+    id: typeof raw?.id === "string" ? raw.id : `item-${Math.random().toString(36).slice(2)}`,
+    catalogId: catalogEntry.id,
+    renderType: raw?.renderType ?? catalogEntry.renderType,
+    typeName: raw?.typeName ?? catalogEntry.name,
+    x: typeof raw?.x === "number" ? raw.x : 0,
+    y: typeof raw?.y === "number" ? raw.y : 0,
+    width: typeof raw?.width === "number" ? raw.width : catalogEntry.defaultWidth,
+    height: typeof raw?.height === "number" ? raw.height : catalogEntry.defaultDepth,
+    elevation: typeof raw?.elevation === "number" ? raw.elevation : catalogEntry.defaultElevation,
+    label: typeof raw?.label === "string" ? raw.label : catalogEntry.name,
+    color: raw?.color,
+    rotationSteps: typeof raw?.rotationSteps === "number" ? raw.rotationSteps : raw?.rotated ? 1 : 0,
+  };
 }
 
 // The 3 pool tables (8ft "length" running along y here, 4ft "width" along x),
 // grouped side-by-side sharing width-side clearance between neighbors.
 export const POOL_TABLES: FurnitureItem[] = [
-  { id: "pool-1", type: "pool", x: 4, y: 24.5, width: 4, height: 8, label: "Pool 1" },
-  { id: "pool-2", type: "pool", x: 12, y: 24.5, width: 4, height: 8, label: "Pool 2" },
-  { id: "pool-3", type: "pool", x: 20, y: 24.5, width: 4, height: 8, label: "Pool 3" },
+  { id: "pool-1", catalogId: "pool-table", renderType: "pool", typeName: "Pool Table", x: 4, y: 24.5, width: 4, height: 8, elevation: 2.55, label: "Pool 1" },
+  { id: "pool-2", catalogId: "pool-table", renderType: "pool", typeName: "Pool Table", x: 12, y: 24.5, width: 4, height: 8, elevation: 2.55, label: "Pool 2" },
+  { id: "pool-3", catalogId: "pool-table", renderType: "pool", typeName: "Pool Table", x: 20, y: 24.5, width: 4, height: 8, elevation: 2.55, label: "Pool 3" },
 ];
 
 // The full clearance envelope around the pool table group (for drawing the
@@ -71,11 +133,11 @@ export const POOL_CLUSTER_CLEARANCE = { x: 0, y: 20.5, width: 28, height: 16 };
 // entrance sightline (see note on RACING_SIM/COUNTER below).
 // Every PS5 has a real wall for its TV — no false walls anywhere.
 export const PS5_STATIONS: FurnitureItem[] = [
-  { id: "ps5-1", type: "ps5", x: 0, y: 0, width: 6, height: 6, label: "PS5 1" },
-  { id: "ps5-2", type: "ps5", x: 0, y: 6, width: 6, height: 6, label: "PS5 2" },
-  { id: "ps5-3", type: "ps5", x: 10.5, y: 0, width: 6, height: 6, label: "PS5 3" },
-  { id: "ps5-4", type: "ps5", x: 10.5, y: 6, width: 6, height: 6, label: "PS5 4" },
-  { id: "ps5-5", type: "ps5", x: 30.7, y: 30.3, width: 6, height: 6, label: "PS5 5" },
+  { id: "ps5-1", catalogId: "ps5-station", renderType: "ps5", typeName: "PS5 Station", x: 0, y: 0, width: 6, height: 6, elevation: 4.5, label: "PS5 1" },
+  { id: "ps5-2", catalogId: "ps5-station", renderType: "ps5", typeName: "PS5 Station", x: 0, y: 6, width: 6, height: 6, elevation: 4.5, label: "PS5 2" },
+  { id: "ps5-3", catalogId: "ps5-station", renderType: "ps5", typeName: "PS5 Station", x: 10.5, y: 0, width: 6, height: 6, elevation: 4.5, label: "PS5 3" },
+  { id: "ps5-4", catalogId: "ps5-station", renderType: "ps5", typeName: "PS5 Station", x: 10.5, y: 6, width: 6, height: 6, elevation: 4.5, label: "PS5 4" },
+  { id: "ps5-5", catalogId: "ps5-station", renderType: "ps5", typeName: "PS5 Station", x: 30.7, y: 30.3, width: 6, height: 6, elevation: 4.5, label: "PS5 5" },
 ];
 
 // Entrance decluttering (Shreyas: "as soon as you enter... the beam, the
@@ -89,11 +151,14 @@ export const PS5_STATIONS: FurnitureItem[] = [
 // - The racing sim was moved out of this column entirely — see RACING_SIM.
 export const COUNTER: FurnitureItem = {
   id: "counter-1",
-  type: "counter",
+  catalogId: "counter",
+  renderType: "counter",
+  typeName: "Counter",
   x: 33.7,
   y: 19.3,
   width: 3, // depth, perpendicular to the glass wall
   height: 5, // width, running along the glass wall
+  elevation: 3.2,
   label: "Counter",
 };
 
@@ -104,11 +169,14 @@ export const COUNTER: FurnitureItem = {
 // looking like a bare obstacle.
 export const CABINET: FurnitureItem = {
   id: "cabinet-1",
-  type: "cabinet",
+  catalogId: "cabinet",
+  renderType: "cabinet",
+  typeName: "Storage Cabinet",
   x: 33.7,
   y: 26.3,
   width: 3,
   height: 3,
+  elevation: 6,
   label: "Storage Cabinet",
 };
 
@@ -116,17 +184,29 @@ export const CABINET: FurnitureItem = {
 // single biggest contributor to the "clumsy entrance" complaint. New spot:
 // the open floor between the PS5 1-4 cluster and the pool table clearance
 // zone, on the LEFT side of the room, nowhere near the entrance sightline
-// (which faces the glass wall on the right). Still 4ft clear of the pool
-// tables (pool tables start at y=24.5; this ends at y=20) and just touches
-// the bottom edge of the PS5 1-4 cluster (y=12) — no clearance rule
-// requires a gap there.
+// (which faces the glass wall on the right). rotationSteps: 3 (270°) turns
+// the whole rig so its monitor end — not just some edge of its footprint —
+// actually faces and sits flush against the left wall (x=0), with the
+// seat/wheel/pedals extending away from the wall into the room, per
+// Shreyas: "I want it towards the wall, not towards the area here." (Worked
+// out from RotatedFootprint's actual rotation formula: at 270°, a local
+// point (0,0,lz) maps to world offset (-lz,0,0) — so the monitor, at the
+// high end of local z, ends up at the LOW end of world x, i.e. against
+// x=0, while the seat — lower local z — ends up further into +x, away
+// from the wall. Bounding box becomes x:[0,8] y:[12,18] after the
+// footprint swap (odd rotation steps swap width/height) — still clear of
+// every PS5 station and the pool-cluster clearance zone.)
 export const RACING_SIM: FurnitureItem = {
   id: "racing-1",
-  type: "racingSim",
-  x: 5,
+  catalogId: "racing-sim",
+  renderType: "racingSim",
+  typeName: "Racing Simulator",
+  x: 0,
   y: 12,
   width: 6,
   height: 8,
+  rotationSteps: 3,
+  elevation: 4,
   label: "Racing Sim",
 };
 

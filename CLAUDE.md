@@ -69,7 +69,9 @@ scattered through components.
 ### Supabase setup (already done, for reference)
 
 - Project ref `ezmcgqgodupdeivknhqp`, URL `https://ezmcgqgodupdeivknhqp.supabase.co`.
-- Two tables, both created via the SQL editor (same shape, same pattern):
+- Five tables total, all created via the SQL editor (same shape/pattern —
+  singleton-row jsonb blobs for the two `_data`/`_layout` tables, plain rows
+  for the three catalog tables):
   ```sql
   create table expense_data (
     id text primary key,
@@ -84,13 +86,47 @@ scattered through components.
     updated_at timestamptz not null default now()
   );
   alter table furniture_layout disable row level security;
+
+  create table furniture_catalog (
+    id text primary key,
+    name text not null,
+    builtin boolean not null default false,
+    render_type text not null,
+    default_width numeric not null,
+    default_depth numeric not null,
+    default_elevation numeric not null,
+    color text,
+    created_at timestamptz not null default now()
+  );
+  alter table furniture_catalog disable row level security;
+
+  create table expense_categories (
+    id text primary key,
+    name text not null,
+    sort_order integer not null default 0
+  );
+  alter table expense_categories disable row level security;
+
+  create table expense_items (
+    id text primary key,
+    category_id text not null references expense_categories(id),
+    name text not null,
+    sort_order integer not null default 0
+  );
+  alter table expense_items disable row level security;
   ```
-  `furniture_layout` was added for the admin-publishable Design-page layout
-  (see "Site-wide admin mode" and "Furniture layout architecture" below) —
-  **Shreyas needs to run that second `create table`/`alter table` block
-  himself in the Supabase SQL editor** if it isn't already there; this repo
-  has no service-role key or migration tooling, only the anon key, so Claude
-  cannot create tables directly.
+  `furniture_layout`, `furniture_catalog`, `expense_categories`, and
+  `expense_items` were all added after the initial `expense_data` table
+  (see "Site-wide admin mode", "Furniture layout architecture", and
+  "Expenses catalog architecture" below) — **Shreyas needs to run each
+  `create table`/`alter table` block himself in the Supabase SQL editor**
+  if it isn't already there (also saved as `supabase_new_tables.sql` at the
+  repo root for convenience); this repo has no service-role key or
+  migration tooling, only the anon key, so Claude cannot create tables
+  directly. Every app-side loader for these already degrades gracefully
+  (falls back to a hardcoded/local-backup default, surfaces a specific
+  error rather than crashing) if a table doesn't exist yet — check for that
+  class of failure first if something looks broken after adding a table.
 - RLS is **disabled on purpose** (Shreyas explicitly chose "fast & open" over
   adding auth/RLS, given the repo is public and this is just expense-planning
   data, not sensitive). The anon/publishable key is safe to have in the client
@@ -185,58 +221,137 @@ this web-only project, fiber supports React Native too) also complain.
 ### Furniture layout architecture (`/design`, Floor Plan, Walkthrough)
 
 `src/state/furnitureLayout.tsx` (`FurnitureLayoutProvider`, wraps the app in
-`App.tsx`) is the single source of truth for furniture positions, shared by
-three pages. Two layers, deliberately kept separate:
+`App.tsx`) is the single source of truth for furniture, shared by three
+pages. Two layers, deliberately kept separate:
 
-- **`baseItems`** — the "real" published layout. Loaded once from the
-  `furniture_layout` Supabase table on app mount (`src/lib/
-  furnitureLayoutRemote.ts`, same load/save/local-backup pattern as
-  `expenses.ts`), falling back to the hardcoded `config/layout.ts` constants
-  if nothing's ever been published. **The Floor Plan page renders only
-  this** (`FloorPlanPage.tsx` passes `baseItems` into `<FloorPlanSvg
-  items={baseItems} />`) — so a visitor idly dragging things around on
-  `/design` never affects what anyone else sees on Floor Plan.
-- **`items`** — `baseItems` with this browser's local overrides layered on
-  top (position/size/rotation only, `localStorage`, key
-  `gorilla8-furniture-layout-v2`). This is what `/design` and `/walkthrough`
-  both render — a personal what-if sandbox. Resetting an item/resetting all
-  reverts to `baseItems`, not the original hardcoded config.
+- **`baseItems`** — the "real" published layout, a full array of instances.
+  Loaded once from the `furniture_layout` Supabase table on app mount
+  (`src/lib/furnitureLayoutRemote.ts`, same load/save/local-backup pattern
+  as `expenses.ts`), falling back to the hardcoded `config/layout.ts`
+  constants if nothing's ever been published. **The Floor Plan page renders
+  only this** (`FloorPlanPage.tsx` passes `baseItems` into `<FloorPlanSvg
+  items={baseItems} />`) — so a visitor idly editing `/design` never affects
+  what anyone else sees on Floor Plan.
+- **`items`** — the local sandbox's full instance list if the browser has
+  made *any* edit (move/resize/rotate/add/remove instance — `localStorage`,
+  key `gorilla8-furniture-layout-v3`), else identical to `baseItems`. This
+  is what `/design` and `/walkthrough` both render. Unlike an earlier
+  per-id-diff version of this file, this has to be a full array now since
+  instances can be added or removed, not just repositioned — don't go back
+  to a sparse-overrides model without re-solving that.
+
+**Furniture catalog** (`src/lib/furnitureCatalog.ts`, table
+`furniture_catalog`): the object *types* an admin can place instances of —
+not the instances themselves. Seeded with the 5 types this space actually
+has (pool table, PS5 station, racing sim, counter, cabinet — `builtin:
+true`, bespoke 3D models) the first time the table is empty. An admin can
+also create arbitrary new types from the Design page's "Add an object"
+search box (MUI `Autocomplete`, `AddObjectControl` in `DesignPage.tsx`):
+typing filters existing catalog entries by substring match, and if nothing
+matches exactly, a synthetic "+ Create '\<query\>'" option appears,
+disclosing up front that new types render as a plain box (not a detailed
+model). Creating one opens a small dialog (name, width, depth, height,
+color) that inserts a new `renderType: "generic"` catalog row, then
+immediately places one instance of it. Every `FurnitureItem` instance
+carries its own `catalogId`/`renderType`/`typeName`/`color` (denormalized
+from the catalog at creation time) so rendering never needs the catalog
+loaded — the catalog is only consulted by the "add object" UI.
+
+**Elevation**: every instance also has `elevation` (vertical height, ft) —
+editable per-instance on `/design` alongside width/length. Threaded exactly
+into `PoolTable`/`Counter`/`Cabinet` (their 3D geometry has one real "body
+height" to swap in); `PS5Station`/`RacingSim` instead get a uniform
+vertical `<group scale={[1, elevation/defaultElevation, 1]}>` around their
+whole hand-built assembly (a known simplification — their internals have
+several fixed absolute Y positions, not one height variable, so this
+stretches the assembly proportionally rather than precisely reflowing each
+part). `GenericObject` (for `renderType: "generic"`) is just a box sized to
+`width × elevation × height` with a floating `drei` `<Text>` label.
 
 **Admin publish flow**: on `/design`, an admin sees a "Save as default for
 everyone" button (behind a confirm dialog, since it's shared/public state).
-It takes the current *resolved* `items` (base + local overrides merged),
-writes it to `furniture_layout` via `publishLayout()`, then promotes it to
-be the new `baseItems` and clears local overrides (they're baked in now).
-From that point on, every visitor's Floor Plan page — and every visitor's
-`/walkthrough` and fresh `/design` sandbox — starts from this new baseline.
+It takes the current *resolved* `items` (whatever the local sandbox has —
+additions, removals, and all), writes it to `furniture_layout` via
+`publishLayout()`, then promotes it to be the new `baseItems` and clears
+the local sandbox (it's baked in now). From that point on, every visitor's
+Floor Plan page — and every visitor's `/walkthrough` and fresh `/design`
+sandbox — starts from this new baseline.
 
 **Sharing without admin**: any visitor (admin or not) can hit "Copy layout
-code" on `/design`, which base64-encodes their current per-item
-`{id,x,y,width,height,rotated}` array (`exportCode()`) to the clipboard —
-meant to be pasted into a chat/WhatsApp message to Shreyas. An admin can
-paste a received code into the "Import code" field (`importCode()`) to load
-someone else's arrangement into their own sandbox for review, then decide
-whether to publish it.
+code" on `/design`, which base64-encodes the *entire current instance
+array* (`exportCode()`, full `FurnitureItem[]`, not just a diff — needed
+since a shared code might describe instances that don't exist in the
+recipient's base at all) to the clipboard — meant to be pasted into a
+chat/WhatsApp message to Shreyas. An admin can paste a received code into
+the "Import code" field (`importCode()`) to load someone else's whole
+arrangement into their own sandbox for review, then decide whether to
+publish it.
 
-**Undo**: `beginGesture()` snapshots the current override state onto an
-in-memory history stack (`HISTORY_LIMIT = 50`); it's called once at the
-*start* of a drag/resize (`DesignCanvas.tsx`'s pointerdown handlers) or on
-focusing a precise-position text field — not on every intermediate
-pointermove/keystroke, so one Ctrl+Z (Cmd+Z on Mac) undoes a whole gesture,
-not one pixel-notch of it. `toggleRotation`/`resetOne`/`resetAll`/
+**Undo**: `beginGesture()` snapshots the current local-sandbox array (or
+`null`, meaning "no edits yet") onto an in-memory history stack
+(`HISTORY_LIMIT = 50`); it's called once at the *start* of a drag/resize
+(`DesignCanvas.tsx`'s pointerdown handlers) or on focusing a precise-
+position text field — not on every intermediate pointermove/keystroke, so
+one Ctrl+Z (Cmd+Z on Mac) undoes a whole gesture, not one pixel-notch of
+it. `toggleRotation`/`addInstance`/`removeInstance`/`resetOne`/`resetAll`/
 `importCode` each push their own snapshot before mutating. History is
 in-memory only (lost on refresh, same as everything else here).
 
 **Rotation model** (also relevant to `WalkthroughScene.tsx`): an item's
-`width`/`height` fields are always the *intrinsic*, unrotated dimensions —
-`footprint(item)` (in `config/layout.ts`) returns the actual on-floor
-`{w, h}`, swapping them when `rotated` is true. The 3D scene's
-`RotatedFootprint` wrapper renders each item centered at local `(0,0)` with
-its intrinsic dimensions, then an outer `<group>` positions it at the true
-footprint center and applies the 90° turn — so rotating in the 3D view spins
-the whole assembly in place around its own center, not around some
-arbitrary corner. Don't reintroduce a version that swaps width/height
-directly on the item passed into a 3D component; that breaks this.
+`width`/`height` fields are always the *intrinsic*, 0°-orientation
+dimensions — `footprint(item)` (in `config/layout.ts`) returns the actual
+on-floor `{w, h}`, swapping them on odd `rotationSteps` (90°/270°). This
+went through two versions:
+- **v1 (wrong, don't bring back)**: a boolean `rotated` flag. It round-trips
+  footprint width/height fine, but can only ever encode 2 distinct facing
+  directions — it can't tell 0° apart from 180°, or 90° apart from 270°,
+  because those pairs have identical footprints. Shreyas caught this
+  directly: rotating the racing sim on the Design page always "flipped"
+  back to a wall-facing direction it couldn't escape, because the 4 real
+  orientations were being squashed into 2.
+- **v2 (current)**: `rotationSteps: 0 | 1 | 2 | 3`, each step = 90°.
+  `toggleRotation` cycles `(steps + 1) % 4` — click it 4 times to get back
+  to where you started, same as physically spinning something a full
+  circle. `footprint()` only cares about parity (`steps % 2`) for
+  width/height swapping, but the 3D scene's `RotatedFootprint` wrapper uses
+  the full step count (`rotationSteps * 90°`) for the actual turn — that's
+  what lets two orientations with the *same footprint* still face opposite
+  directions. `normalizeFurnitureItem` migrates old boolean `rotated` data
+  (`true` → step 1) automatically. Don't go back to a boolean; the whole
+  point was that 2 states aren't enough to represent a real rotation.
+
+The 3D scene renders each item centered at local `(0,0)` with its intrinsic
+dimensions, then an outer `<group>` positions it at the true footprint
+center and applies the turn — so rotating in the 3D view spins the whole
+assembly in place around its own center, not around some arbitrary corner.
+
+PS5 used to have its own thing: a `nearestWallFacing()` helper
+(`lib/furnitureFacing.ts`, since deleted) picked whichever wall was closest
+to the station's x-position and pointed the TV there, ignoring rotation
+entirely. It only checked vertical walls, so a PS5 placed against a
+horizontal wall (e.g. the 35ft wall) never faced it — a real bug Shreyas
+caught. Removed per his call ("you can also remove that feature... I will
+only turn it") rather than fixing the wall list — PS5 is now
+rotation-driven exactly like the racing sim: same `rotationSteps` formula
+in `WalkthroughScene.tsx` and the same `facingVector()` branch in
+`DesignCanvas.tsx`, and the sidebar/canvas rotate controls are no longer
+disabled for it.
+
+### Expenses catalog architecture (categories + items are DB-managed too)
+
+Same idea as the furniture catalog, for the Expenses page. `src/lib/
+expenseCatalog.ts` (tables `expense_categories`, `expense_items`) replaces
+what used to be hardcoded in a now-deleted `config/expenses.ts` — seeded
+with the exact same ids/names/order that file had the first time these
+tables are empty, so pre-existing real `expense_data` entries (quantities/
+prices someone already typed in, keyed by item id) keep matching correctly.
+`ExpensesPage.tsx` loads both on mount; an admin sees a "Manage categories &
+items" panel (add a category, add an item to a category, delete either —
+deleting a category is blocked while it still has items, to avoid silently
+orphaning them). `src/lib/expenses.ts` (the actual quantity/price state,
+table `expense_data`) no longer imports a static item list at all — it's
+keyed by whatever ids exist and defaults a missing row via `getRow()`, so a
+brand-new item just works with no migration step.
 
 ### Pages
 
