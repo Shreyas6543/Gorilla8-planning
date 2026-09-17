@@ -30,8 +30,10 @@ with 1,350's spare capital").
 
 ## Tech stack
 
-React 19 + TypeScript + Vite + MUI v9 (Material UI) + MUI X Charts +
-react-router-dom v7 + Supabase (`@supabase/supabase-js`) for the Expenses
+React 19.2.x (pinned — see "3D Walkthrough" gotcha below, do not bump to
+19.3+) + TypeScript + Vite + MUI v9 (Material UI) + MUI X Charts +
+react-router-dom v7 + Three.js via `@react-three/fiber` + `@react-three/drei`
+(the 3D walkthrough) + Supabase (`@supabase/supabase-js`) for the Expenses
 page's data. No custom backend/API of our own — the app talks to Supabase's
 auto-generated REST API directly from the browser.
 
@@ -67,7 +69,7 @@ scattered through components.
 ### Supabase setup (already done, for reference)
 
 - Project ref `ezmcgqgodupdeivknhqp`, URL `https://ezmcgqgodupdeivknhqp.supabase.co`.
-- One table, created via the SQL editor:
+- Two tables, both created via the SQL editor (same shape, same pattern):
   ```sql
   create table expense_data (
     id text primary key,
@@ -75,7 +77,20 @@ scattered through components.
     updated_at timestamptz not null default now()
   );
   alter table expense_data disable row level security;
+
+  create table furniture_layout (
+    id text primary key,
+    data jsonb not null,
+    updated_at timestamptz not null default now()
+  );
+  alter table furniture_layout disable row level security;
   ```
+  `furniture_layout` was added for the admin-publishable Design-page layout
+  (see "Site-wide admin mode" and "Furniture layout architecture" below) —
+  **Shreyas needs to run that second `create table`/`alter table` block
+  himself in the Supabase SQL editor** if it isn't already there; this repo
+  has no service-role key or migration tooling, only the anon key, so Claude
+  cannot create tables directly.
 - RLS is **disabled on purpose** (Shreyas explicitly chose "fast & open" over
   adding auth/RLS, given the repo is public and this is just expense-planning
   data, not sensitive). The anon/publishable key is safe to have in the client
@@ -86,22 +101,34 @@ scattered through components.
   `VITE_SUPABASE_ANON_KEY`. `.env.example` documents the variable names with
   placeholders for anyone re-cloning this.
 
-### Edit gate (passcode, not real auth)
+### Site-wide admin mode (passcode, not real auth)
 
-`src/lib/editAccess.ts` + the gate UI in `ExpensesPage.tsx`: the page loads
-**read-only** by default (plain numbers, no inputs). An "Edit" button opens a
-passcode dialog; correct passcode (`VITE_EDIT_PASSCODE` in `.env.local`,
-default fallback `"gorilla8"` if unset) flips in-memory React state to
-editable inputs, with a "Lock" button to re-engage read-only manually.
-**Deliberately not persisted anywhere** (no sessionStorage/localStorage) —
-Shreyas explicitly wants any refresh, tab close, or navigating away and back
-to require the passcode again, every time. Don't add persistence back to
-this without being asked. This is explicitly **not real security** — the passcode
-ships inside the built client bundle, same caveat as the Supabase key. It
-exists to stop casual/accidental edits by someone who opens the page without
-knowing the code, not to protect against a determined attacker. Don't
-"upgrade" this to real auth (Google login, etc.) unless asked — Shreyas
-considered and explicitly declined that in favor of this simpler approach.
+`src/lib/editAccess.ts` (unchanged) + `src/state/adminAuth.tsx` (new,
+site-wide) + the tap gesture in `PageHeader.tsx`. Originally this was
+Expenses-only (an "Edit" button opening a passcode dialog on that one page);
+Shreyas asked for it to become one global admin mode covering both Expenses
+editing and Design-page publishing, unlocked from anywhere:
+
+- Tap the round gaming-icon logo in the header **5 times within 3 seconds**
+  (`TAP_COUNT_REQUIRED`/`TAP_WINDOW_MS` in `PageHeader.tsx`) to open the
+  passcode dialog. Correct passcode (`VITE_EDIT_PASSCODE` in `.env.local`,
+  default fallback `"gorilla8"`) sets `isAdmin = true` in `AdminProvider`
+  (wraps the whole app in `App.tsx`).
+- While admin: Expenses has **no Edit button at all** — the table is just
+  directly editable, no re-prompting. Design page shows its admin-only
+  "Import code" + "Save as default for everyone" controls (see below).
+  A small "Admin — tap to exit" chip appears in the header; tapping it logs
+  out (`lock()`).
+- While NOT admin: Expenses' Edit button is **gone entirely** (not shown,
+  not just disabled) — there is no path to unlock from the Expenses page
+  itself anymore, only via the header's 5-tap gesture.
+- **Deliberately not persisted anywhere** (no sessionStorage/localStorage) —
+  same rule as before: any refresh, tab close, or navigating away and back
+  requires the passcode again, every time. Don't add persistence without
+  being asked.
+- Still explicitly **not real security** — same caveat as always, the
+  passcode ships in the client bundle. Don't "upgrade" to real auth unless
+  asked.
 
 ### Debounced auto-save (important UX requirement, don't regress)
 
@@ -120,6 +147,96 @@ layouts side by side in the DOM, toggled by CSS breakpoint (`sx={{ display:
 {xs:'block', md:'none'} }}` and its inverse) — a stacked-card view per item on
 mobile (`xs`/`sm`), the original wide table with horizontal scroll on desktop
 (`md+`). Don't collapse this back to table-only.
+
+### 3D Walkthrough (`/walkthrough`)
+
+First-person walk-through of the floor plan, built with Three.js. Key files:
+`src/lib/room3d.ts` (wall-building from `WALL_SEGMENTS`, room-boundary
+collision test, eye height/walk speed constants), `src/components/
+walkthrough/FirstPersonController.tsx` (WASD movement via a keyboard-state
+ref + `useFrame`, computing forward/right vectors from the camera's current
+look direction — movement stays on the horizontal plane regardless of look
+pitch), `src/components/walkthrough/WalkthroughScene.tsx` (the actual scene:
+floor as a `THREE.Shape` extruded from `OUTER_POLYGON`, walls as boxes per
+`WALL_SEGMENTS` — all axis-aligned in this floor plan so no rotation math
+was needed, glass wall gets a transparent/transmissive material, the
+entrance segment is skipped entirely so it's a real walkable gap, beams as
+thin columns, furniture reads straight from `config/layout.ts`). Mouse-look
+via `@react-three/drei`'s `PointerLockControls`; only the outer room
+boundary has collision (no furniture collision yet — known simplification).
+
+**Critical version pin — do not "helpfully" upgrade React on this project**:
+`@react-three/fiber` (even its latest 10.0.0 canary builds, checked
+2026-09-17) hard-caps its peer range at `react "<19.3"`. This project had
+been scaffolded with React 19.3.0, which is silently, completely
+incompatible with fiber's custom reconciler — not a cosmetic peer-warning
+mismatch. Symptom was brutal to diagnose: no console errors, WebGL context
+healthy, canvas sized correctly, but the entire scene rendered pure black
+forever (confirmed via reading back canvas pixel alpha = 0, i.e. nothing
+was ever actually drawn). Fixed by pinning `react`, `react-dom`,
+`@types/react`, `@types/react-dom` to `19.2.x` (used 19.2.8 / 19.2.7 — exact
+patch version doesn't matter, just needs to be `<19.3`). If a future
+`npm install` or "update dependencies" pass bumps React back to 19.3+, the
+3D walkthrough will silently break again with zero errors — check this
+pin first if `/walkthrough` ever goes black again. Installed with
+`--legacy-peer-deps` throughout since `@expo/*` peer deps (irrelevant to
+this web-only project, fiber supports React Native too) also complain.
+
+### Furniture layout architecture (`/design`, Floor Plan, Walkthrough)
+
+`src/state/furnitureLayout.tsx` (`FurnitureLayoutProvider`, wraps the app in
+`App.tsx`) is the single source of truth for furniture positions, shared by
+three pages. Two layers, deliberately kept separate:
+
+- **`baseItems`** — the "real" published layout. Loaded once from the
+  `furniture_layout` Supabase table on app mount (`src/lib/
+  furnitureLayoutRemote.ts`, same load/save/local-backup pattern as
+  `expenses.ts`), falling back to the hardcoded `config/layout.ts` constants
+  if nothing's ever been published. **The Floor Plan page renders only
+  this** (`FloorPlanPage.tsx` passes `baseItems` into `<FloorPlanSvg
+  items={baseItems} />`) — so a visitor idly dragging things around on
+  `/design` never affects what anyone else sees on Floor Plan.
+- **`items`** — `baseItems` with this browser's local overrides layered on
+  top (position/size/rotation only, `localStorage`, key
+  `gorilla8-furniture-layout-v2`). This is what `/design` and `/walkthrough`
+  both render — a personal what-if sandbox. Resetting an item/resetting all
+  reverts to `baseItems`, not the original hardcoded config.
+
+**Admin publish flow**: on `/design`, an admin sees a "Save as default for
+everyone" button (behind a confirm dialog, since it's shared/public state).
+It takes the current *resolved* `items` (base + local overrides merged),
+writes it to `furniture_layout` via `publishLayout()`, then promotes it to
+be the new `baseItems` and clears local overrides (they're baked in now).
+From that point on, every visitor's Floor Plan page — and every visitor's
+`/walkthrough` and fresh `/design` sandbox — starts from this new baseline.
+
+**Sharing without admin**: any visitor (admin or not) can hit "Copy layout
+code" on `/design`, which base64-encodes their current per-item
+`{id,x,y,width,height,rotated}` array (`exportCode()`) to the clipboard —
+meant to be pasted into a chat/WhatsApp message to Shreyas. An admin can
+paste a received code into the "Import code" field (`importCode()`) to load
+someone else's arrangement into their own sandbox for review, then decide
+whether to publish it.
+
+**Undo**: `beginGesture()` snapshots the current override state onto an
+in-memory history stack (`HISTORY_LIMIT = 50`); it's called once at the
+*start* of a drag/resize (`DesignCanvas.tsx`'s pointerdown handlers) or on
+focusing a precise-position text field — not on every intermediate
+pointermove/keystroke, so one Ctrl+Z (Cmd+Z on Mac) undoes a whole gesture,
+not one pixel-notch of it. `toggleRotation`/`resetOne`/`resetAll`/
+`importCode` each push their own snapshot before mutating. History is
+in-memory only (lost on refresh, same as everything else here).
+
+**Rotation model** (also relevant to `WalkthroughScene.tsx`): an item's
+`width`/`height` fields are always the *intrinsic*, unrotated dimensions —
+`footprint(item)` (in `config/layout.ts`) returns the actual on-floor
+`{w, h}`, swapping them when `rotated` is true. The 3D scene's
+`RotatedFootprint` wrapper renders each item centered at local `(0,0)` with
+its intrinsic dimensions, then an outer `<group>` positions it at the true
+footprint center and applies the 90° turn — so rotating in the 3D view spins
+the whole assembly in place around its own center, not around some
+arbitrary corner. Don't reintroduce a version that swaps width/height
+directly on the item passed into a 3D component; that breaks this.
 
 ### Pages
 
@@ -140,7 +257,34 @@ mobile (`xs`/`sm`), the original wide table with horizontal scroll on desktop
    items where a final price has been entered — so "Final total" is literally
    "money committed so far." Persisted to Supabase (with a `localStorage`
    fallback/backup — see Architecture below). Read-only by default; editing
-   requires a passcode (see "Edit gate" below).
+   only an admin can edit, no per-page passcode anymore (see "Site-wide
+   admin mode").
+4. **Floor Plan (`/floorplan`)** — the candidate space's actual floor plan,
+   reconstructed to scale from a hand-measured notebook sketch (numbers live
+   in `src/config/floorplan.ts` — outer wall polygon, wall segment lengths/
+   labels, the glass wall, the entrance shutter opening, two structural
+   beams). Renders as an SVG (`FloorPlanSvg.tsx`) plus the **published**
+   furniture layout (`baseItems` from `FurnitureLayoutProvider` — see
+   "Furniture layout architecture" below; falls back to `src/config/
+   layout.ts`'s hardcoded defaults if nothing's been published yet: 3 pool
+   tables grouped to share clearance, 5 PS5s each backed onto a real wall
+   for its TV, 1 racing sim, 1 counter + 1 cabinet on the glass wall beside
+   the entrance with a clear sightline). Every original placement was
+   verified programmatically (no overlaps, nothing outside the walls, no
+   beam collisions, every PS5 touches a real wall) — see git history for the
+   verification scripts if redoing this. A "Customize and see" button links
+   to `/design`.
+5. **Design (`/design`)** — drag/resize/rotate any furniture item on a 2D
+   plan, with live gap-to-wall/gap-to-item measurements while dragging,
+   overlap/out-of-bounds warnings, Ctrl+Z undo, and a "See it in 3D" link to
+   Walkthrough. A personal `localStorage` sandbox for everyone; admin-only
+   controls to publish it as the new default or import a code someone else
+   shared. See "Furniture layout architecture" below.
+6. **Walkthrough (`/walkthrough`)** — full-screen first-person 3D view of
+   the current furniture layout (published default + this browser's local
+   Design-page tweaks, if any), built with Three.js via `@react-three/fiber`
+   + `@react-three/drei`. See "3D Walkthrough" and "Furniture layout
+   architecture" below.
 
 ## Data accuracy discipline
 

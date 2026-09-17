@@ -1,12 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
-  Button,
   Container,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Grid,
   Paper,
   Stack,
@@ -16,11 +11,8 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  TextField,
   Typography,
 } from "@mui/material";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import { PROPERTIES } from "../config/properties";
 import { EXPENSE_CATEGORIES, EXPENSE_ITEMS } from "../config/expenses";
 import {
@@ -35,7 +27,7 @@ import {
   type PropertyKey,
 } from "../lib/expenses";
 import { isSupabaseConfigured } from "../lib/supabaseClient";
-import { checkPasscode } from "../lib/editAccess";
+import { useAdmin } from "../state/adminAuth";
 import { formatINR } from "../lib/calculations";
 import { PageHeader } from "../components/PageHeader";
 import { MetricCard } from "../components/MetricCard";
@@ -119,12 +111,10 @@ const headCellSx = {
 };
 
 export function ExpensesPage() {
+  const { isAdmin } = useAdmin();
+  const unlocked = isAdmin;
   const [state, setState] = useState<ExpenseState>(() => createEmptyState());
   const [loaded, setLoaded] = useState(false);
-  const [unlocked, setUnlockedState] = useState<boolean>(false);
-  const [gateOpen, setGateOpen] = useState(false);
-  const [passcodeInput, setPasscodeInput] = useState("");
-  const [passcodeError, setPasscodeError] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -161,21 +151,6 @@ export function ExpensesPage() {
 
   const updateField = (id: string, field: keyof ExpenseRow, value: number) => {
     setState((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value } }));
-  };
-
-  const handleUnlockSubmit = () => {
-    if (checkPasscode(passcodeInput)) {
-      setUnlockedState(true);
-      setGateOpen(false);
-      setPasscodeInput("");
-      setPasscodeError(false);
-    } else {
-      setPasscodeError(true);
-    }
-  };
-
-  const handleLock = () => {
-    setUnlockedState(false);
   };
 
   const totals = useMemo(() => {
@@ -272,7 +247,7 @@ export function ExpensesPage() {
                     ? "Loading…"
                     : unlocked
                       ? "Edit mode — fill in quantity and price per unit as you get quotes."
-                      : "Read-only. Click Edit and enter the passcode to make changes."}
+                      : "Read-only. An admin can edit this (tap the logo 5x on any page to unlock admin mode)."}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -286,21 +261,6 @@ export function ExpensesPage() {
                   <Typography variant="caption" sx={{ color: saveStatus === "saving" ? "text.secondary" : "primary.main" }}>
                     {saveStatus === "saving" ? "Saving…" : "Saved"}
                   </Typography>
-                )}
-                {unlocked ? (
-                  <Button size="small" startIcon={<LockOutlinedIcon />} onClick={handleLock} sx={{ color: "text.secondary" }}>
-                    Lock
-                  </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    startIcon={<EditOutlinedIcon />}
-                    onClick={() => setGateOpen(true)}
-                    sx={{ borderColor: "rgba(255,255,255,0.2)" }}
-                  >
-                    Edit
-                  </Button>
                 )}
               </Stack>
             </Stack>
@@ -498,37 +458,6 @@ export function ExpensesPage() {
           </Typography>
         </Stack>
       </Container>
-
-      <Dialog open={gateOpen} onClose={() => setGateOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Enter passcode to edit</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            fullWidth
-            type="password"
-            label="Passcode"
-            value={passcodeInput}
-            onChange={(e) => {
-              setPasscodeInput(e.target.value);
-              setPasscodeError(false);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") handleUnlockSubmit();
-            }}
-            error={passcodeError}
-            helperText={passcodeError ? "Wrong passcode" : " "}
-            sx={{ mt: 1 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setGateOpen(false)} sx={{ color: "text.secondary" }}>
-            Cancel
-          </Button>
-          <Button onClick={handleUnlockSubmit} variant="contained" sx={{ color: "#04140a" }}>
-            Unlock
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

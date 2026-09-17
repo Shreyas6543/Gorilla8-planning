@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Box, Button, Container, Paper, Slider, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
 import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import { HOUR_OPTIONS, PROPERTIES, DEFAULT_HOURS } from "../config/properties";
 import { calcScenario } from "../lib/calculations";
 import { PageHeader } from "../components/PageHeader";
@@ -199,6 +200,29 @@ export function HomePage() {
               sx={{ color: "#04140a" }}
             >
               Open full comparison
+            </Button>
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2.5, md: 3 },
+              borderRadius: 4,
+              textAlign: "center",
+              border: "1px solid rgba(255,255,255,0.08)",
+            }}
+          >
+            <Typography sx={{ color: "text.secondary", mb: 1.5 }}>
+              Want to see the actual space this plan is for, to scale?
+            </Typography>
+            <Button
+              component={RouterLink}
+              to="/floorplan"
+              variant="outlined"
+              endIcon={<MapOutlinedIcon />}
+              sx={{ borderColor: "rgba(255,255,255,0.2)" }}
+            >
+              View floor plan
             </Button>
           </Paper>
 
