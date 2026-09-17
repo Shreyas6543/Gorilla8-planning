@@ -15,19 +15,23 @@ export interface WallMesh3D {
   z: number; // world Z (center)
 }
 
-// Builds one box per wall segment, in world units (1 unit = 1 ft), skipping
-// the entrance opening entirely so it's a real gap you can walk through.
+// Builds one box per wall segment, in world units (1 unit = 1 ft). The
+// entrance is a glass shutter/door — same tinted-glass material as the
+// main glass wall, not a bare opening — so it's included like every other
+// segment; collision (isInsideRoom, below) is polygon-based and doesn't
+// consult these meshes, so walking "through" it still works exactly like
+// walking through any other piece of glass or furniture in this sim.
 // Every measured segment here is axis-aligned, so no rotation math is
 // needed — just swap which axis gets the segment's length.
 export function buildWalls(thickness = 0.3): WallMesh3D[] {
-  return WALL_SEGMENTS.filter((seg) => !seg.label.includes("entrance")).map((seg, i) => {
+  return WALL_SEGMENTS.map((seg, i) => {
     const [x1, y1] = seg.from;
     const [x2, y2] = seg.to;
     const horizontal = y1 === y2;
     const length = horizontal ? Math.abs(x2 - x1) : Math.abs(y2 - y1);
     return {
       id: `wall-${i}`,
-      isGlass: seg.label.includes("glass"),
+      isGlass: seg.label.includes("glass") || seg.label.includes("entrance"),
       horizontal,
       length: length + (length > 0.5 ? thickness : 0), // small overlap at corners so they don't gap
       x: (x1 + x2) / 2,

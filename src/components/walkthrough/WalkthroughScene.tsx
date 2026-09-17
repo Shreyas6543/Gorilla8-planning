@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { PointerLockControls, useTexture, useGLTF, Environment, Text } from "@react-three/drei";
+import { PointerLockControls, useGLTF, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { buildWalls, isInsideRoom, EYE_HEIGHT_FT, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
@@ -32,13 +32,17 @@ function RotatedFootprint({ item, children }: { item: FurnitureItem; children: (
   );
 }
 
-// Materials sampled from a real walkthrough video of the actual space
-// (Video_20260917_130157_691.mp4): warm off-white matte walls, dark
-// speckled polished-granite floor (texture cropped from the video itself,
-// see public/textures/floor.jpg), a dark stone skirting board at the base
-// of every wall, and a mullioned glass wall.
-const WALL_COLOR = "#DAD7CE";
-const SKIRTING_COLOR = "#332D29";
+// Base interior, finalized: dark grey carpet, dark grey walls + ceiling
+// (same color as each other), and grey-tinted glass (the real glass gets
+// outward-facing ad stickers, so from inside it reads as ~10% transmission
+// tinted glass rather than clear). Every general room light is off — the
+// only illumination is TV/screen glow spill and dedicated pool table
+// lights, both added at their fixtures below.
+const WALL_COLOR = "#34343a";
+const CARPET_COLOR = "#222226";
+const SKIRTING_COLOR = "#141416";
+const GLASS_COLOR = "#5a5a5e";
+const MULLION_COLOR = "#1c1c1f";
 const WALL_HEIGHT = 9.5;
 const SKIRTING_HEIGHT = 0.5;
 const START_X = (ENTRANCE.from[0] + ENTRANCE.to[0]) / 2;
@@ -53,23 +57,33 @@ function SceneSetup() {
   return null;
 }
 
+function roomShape() {
+  const s = new THREE.Shape();
+  OUTER_POLYGON.forEach(([x, y], i) => (i === 0 ? s.moveTo(x, y) : s.lineTo(x, y)));
+  s.closePath();
+  return s;
+}
+
 function Floor() {
-  const shape = useMemo(() => {
-    const s = new THREE.Shape();
-    OUTER_POLYGON.forEach(([x, y], i) => (i === 0 ? s.moveTo(x, y) : s.lineTo(x, y)));
-    s.closePath();
-    return s;
-  }, []);
-  const texture = useTexture("/textures/floor.jpg");
-  useMemo(() => {
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-    texture.repeat.set(36.7 / 5, 36.5 / 5); // roughly 5ft tiles, matching the real floor's slab size
-    texture.colorSpace = THREE.SRGBColorSpace;
-  }, [texture]);
+  const shape = useMemo(() => roomShape(), []);
   return (
     <mesh rotation={[Math.PI / 2, 0, 0]} receiveShadow>
       <shapeGeometry args={[shape]} />
-      <meshStandardMaterial map={texture} side={THREE.DoubleSide} roughness={0.35} metalness={0.15} />
+      <meshStandardMaterial color={CARPET_COLOR} side={THREE.DoubleSide} roughness={0.95} metalness={0} />
+    </mesh>
+  );
+}
+
+// Same footprint as the floor, at ceiling height — same color as the
+// walls, per Shreyas's call ("walls and the roof will be of the same
+// color"). DoubleSide so it's visible from below without worrying about
+// winding order.
+function Ceiling() {
+  const shape = useMemo(() => roomShape(), []);
+  return (
+    <mesh position={[0, WALL_HEIGHT, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <shapeGeometry args={[shape]} />
+      <meshStandardMaterial color={WALL_COLOR} side={THREE.DoubleSide} roughness={0.9} metalness={0} />
     </mesh>
   );
 }
@@ -83,7 +97,9 @@ function Walls() {
           <mesh position={[w.x, WALL_HEIGHT / 2, w.z]} castShadow>
             <boxGeometry args={w.horizontal ? [w.length, WALL_HEIGHT, 0.3] : [0.3, WALL_HEIGHT, w.length]} />
             {w.isGlass ? (
-              <meshPhysicalMaterial color="#3DB2FF" transparent opacity={0.15} roughness={0.05} transmission={0.7} />
+              // Ad stickers on the outside face + a grey privacy film means
+              // only ~10% of outside light actually makes it through.
+              <meshPhysicalMaterial color={GLASS_COLOR} roughness={0.35} transmission={0.1} opacity={1} />
             ) : (
               <meshStandardMaterial color={WALL_COLOR} roughness={0.92} />
             )}
@@ -105,7 +121,7 @@ function Walls() {
                 }
               >
                 <boxGeometry args={w.horizontal ? [0.15, WALL_HEIGHT, 0.32] : [0.32, WALL_HEIGHT, 0.15]} />
-                <meshStandardMaterial color="#EDEBE3" roughness={0.5} />
+                <meshStandardMaterial color={MULLION_COLOR} metalness={0.4} roughness={0.4} />
               </mesh>
             ))}
         </group>
@@ -115,8 +131,9 @@ function Walls() {
 }
 
 function CeilingLights() {
-  // A handful of linear strip lights, matching the thin white ceiling
-  // fixtures visible in the real space.
+  // The fixtures are still physically there — same handful of linear strip
+  // lights as the real space — they're just switched off: no ambient room
+  // lighting apart from the TV/screen glow and the pool table lights.
   const positions: [number, number][] = [
     [8, 6], [8, 20], [8, 32],
     [26, 20], [26, 32],
@@ -126,7 +143,7 @@ function CeilingLights() {
       {positions.map(([x, z], i) => (
         <mesh key={i} position={[x, WALL_HEIGHT - 0.1, z]} rotation={[0, 0, 0]}>
           <boxGeometry args={[2.5, 0.08, 0.15]} />
-          <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1.2} />
+          <meshStandardMaterial color="#0d0d0f" roughness={0.6} />
         </mesh>
       ))}
     </>
@@ -146,7 +163,7 @@ function Beams3D() {
               // Dressed up to match the counter/cabinet nook right beside
               // it, so it reads as a deliberate architectural post rather
               // than a bare obstacle poking out next to the doorway.
-              <meshStandardMaterial color="#EDEBE3" roughness={0.5} />
+              <meshStandardMaterial color={WALL_COLOR} roughness={0.5} />
             ) : (
               <meshStandardMaterial color="#8b3a3a" />
             )}
@@ -201,6 +218,74 @@ function enableShadows(root: THREE.Object3D) {
   });
 }
 
+// pool_table_raw.glb's color atlas leaves the felt on a placeholder magenta
+// ("Color_K05") and the body/rails on flat black ("Color_M09") — recolored
+// here to the real table Shreyas sent a photo of: green felt, a polished
+// mahogany/rosewood body (NOT bright red — a dark reddish-brown wood
+// lacquer, low metalness so it reads as glossy varnish, not red plastic).
+const POOL_FELT_COLOR = "#146B3A";
+const POOL_BODY_COLOR = "#4A1B10";
+
+function recolorPoolTable(root: THREE.Object3D) {
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of materials as THREE.MeshStandardMaterial[]) {
+      if (mat.name === "Color_K05") {
+        mat.color.set(POOL_FELT_COLOR);
+        mat.roughness = 0.85;
+        mat.metalness = 0;
+      } else if (mat.name === "Color_M09") {
+        mat.color.set(POOL_BODY_COLOR);
+        mat.roughness = 0.18;
+        mat.metalness = 0.08;
+      }
+    }
+  });
+}
+
+// A real pool-hall light fixture: a long low-hanging shade suspended over
+// the table by rods from the ceiling, running along the table's long axis
+// (`height`, per this file's local-frame convention), with a warm glowing
+// underside and the actual light sources tucked just beneath it — the only
+// light in the room besides TV/screen glow, per Shreyas's call to turn
+// everything else off.
+function PoolTableLight({ height, surfaceY }: { height: number; surfaceY: number }) {
+  const shadeY = surfaceY + 3.0; // ~3ft above the felt, like a real snooker light
+  const shadeLen = Math.min(height * 0.65, 6);
+  const rodTop = WALL_HEIGHT;
+  return (
+    <group>
+      {[-shadeLen / 2 + 0.3, shadeLen / 2 - 0.3].map((dz) => (
+        <mesh key={dz} position={[0, (shadeY + rodTop) / 2, dz]}>
+          <cylinderGeometry args={[0.03, 0.03, rodTop - shadeY, 8]} />
+          <meshStandardMaterial color="#141416" metalness={0.5} roughness={0.4} />
+        </mesh>
+      ))}
+      <mesh position={[0, shadeY, 0]} castShadow>
+        <boxGeometry args={[0.55, 0.3, shadeLen]} />
+        <meshStandardMaterial color="#101012" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, shadeY - 0.16, 0]} rotation={[Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[0.48, shadeLen - 0.1]} />
+        <meshBasicMaterial color="#FFDDAA" toneMapped={false} />
+      </mesh>
+      {[-shadeLen / 4, shadeLen / 4].map((dz) => (
+        <pointLight
+          key={dz}
+          position={[0, shadeY - 0.3, dz]}
+          intensity={140}
+          distance={height + 5}
+          decay={2}
+          color="#FFD9A0"
+          castShadow
+        />
+      ))}
+    </group>
+  );
+}
+
 function PoolTable({
   x,
   y,
@@ -222,6 +307,7 @@ function PoolTable({
   const model = useMemo(() => {
     const clone = scene.clone(true);
     enableShadows(clone);
+    recolorPoolTable(clone);
     return clone;
   }, [scene]);
   const fit = useMemo(() => fitFootprint(model, width, height, elevation), [model, width, height, elevation]);
@@ -233,6 +319,7 @@ function PoolTable({
         <primitive object={model} position={fit.offset} />
       </group>
       {showRack && <BallRackAndCues width={width} height={height} surfaceY={surfaceY} />}
+      <PoolTableLight height={height} surfaceY={surfaceY} />
     </group>
   );
 }
@@ -283,6 +370,10 @@ function BallRackAndCues({ width, height, surfaceY }: { width: number; height: n
 const TV_WIDTH_FT = 4.0;
 const TV_HEIGHT_FT = 2.25;
 
+// Only the TV/screens are actually lit in this interior — a glowing screen
+// quad (self-illuminating, unaffected by scene lighting) plus a real point
+// light so it spills onto the wall/floor/bean bag around it, since every
+// other room light is off.
 function TVPanel() {
   const { scene } = useGLTF("/models/tv_raw.glb");
   const model = useMemo(() => {
@@ -292,8 +383,15 @@ function TVPanel() {
   }, [scene]);
   const fit = useMemo(() => fitFootprint(model, TV_WIDTH_FT, 0.15, TV_HEIGHT_FT, "x"), [model]);
   return (
-    <group rotation={[0, fit.rotationY, 0]} scale={fit.scale}>
-      <primitive object={model} position={fit.offset} />
+    <group>
+      <group rotation={[0, fit.rotationY, 0]} scale={fit.scale}>
+        <primitive object={model} position={fit.offset} />
+      </group>
+      <mesh position={[0, TV_HEIGHT_FT / 2, 0.09]}>
+        <planeGeometry args={[TV_WIDTH_FT * 0.82, TV_HEIGHT_FT * 0.82]} />
+        <meshBasicMaterial color="#BFE4FF" toneMapped={false} />
+      </mesh>
+      <pointLight position={[0, TV_HEIGHT_FT / 2, 0.6]} intensity={55} distance={10} decay={2} color="#BFE4FF" />
     </group>
   );
 }
@@ -649,6 +747,9 @@ function RacingSim({
             {frameMat}
           </mesh>
         ))}
+        {/* Screen glow spill toward the seat — the only light this rig
+            gives off, since every general room light is off. */}
+        <pointLight position={[0, 3.55, -0.5]} intensity={45} distance={9} decay={2} color="#CFE8FF" />
       </group>
 
       {/* Gaming PC tower, beside the monitor stand */}
@@ -657,20 +758,109 @@ function RacingSim({
   );
 }
 
+// Dark reeded-wood reception counter, matching the reference photo Shreyas
+// sent: near-black wood body, tightly-spaced vertical fluted ridges, and
+// warm LED strip lighting washing over the ridges from a slot right under
+// the countertop overhang and another right at the floor. Every general
+// room light is off in this interior, so these strips are the counter's
+// own dedicated light source, not ambient fill — same approach as the TV
+// glow and pool table lights elsewhere in this scene.
+const COUNTER_BODY_COLOR = "#171310";
+const COUNTER_TOP_COLOR = "#0F0C0A";
+const COUNTER_LED_COLOR = "#FFC98A";
+
+// One flat face of the counter body: ridges run along `span` (the face's
+// own width) at the fixed cross-axis position `pos`, everything else
+// (LED strips + their lights) mirrors that same layout.
+interface CounterFace {
+  axis: "x" | "z"; // which world axis is held fixed for this face
+  pos: number; // fixed coordinate on that axis (the face's plane)
+  spanStart: number; // start of the face's other axis, in world units
+  span: number; // length of the face along that other axis
+  outward: 1 | -1; // which way the face points, for LED/light offsets
+}
+
 function Counter({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
   const cx = x + width / 2;
   const cz = y + height / 2;
+  const ledInset = 0.35; // vertical gap the ridges leave for each LED slot
+  const ridgeHeight = elevation - ledInset * 2;
+  const ridgeY = elevation / 2;
+  // All 4 sides get ridges + LEDs — this item can be square (width ===
+  // height), so which pair of opposite faces ends up facing the room
+  // after rotation isn't knowable here; decorating all 4 means it always
+  // looks right regardless of orientation.
+  const faces: CounterFace[] = [
+    { axis: "z", pos: y, spanStart: x, span: width, outward: -1 },
+    { axis: "z", pos: y + height, spanStart: x, span: width, outward: 1 },
+    { axis: "x", pos: x, spanStart: y, span: height, outward: -1 },
+    { axis: "x", pos: x + width, spanStart: y, span: height, outward: 1 },
+  ];
+
   return (
     <group>
       <mesh position={[cx, elevation / 2, cz]} castShadow>
         <boxGeometry args={[width, elevation, height]} />
-        <meshStandardMaterial color="#9AA4B2" roughness={0.6} />
+        <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.55} />
       </mesh>
+
+      {/* Reeded/fluted wood front, on every face */}
+      {faces.map((face) => {
+        const ridgeCount = Math.max(8, Math.round(face.span / 0.18));
+        const ridgeSpacing = face.span / ridgeCount;
+        return Array.from({ length: ridgeCount }, (_, i) => {
+          const along = face.spanStart + ridgeSpacing * (i + 0.5);
+          const pos: [number, number, number] =
+            face.axis === "z" ? [along, ridgeY, face.pos] : [face.pos, ridgeY, along];
+          return (
+            <mesh key={`ridge-${face.axis}-${face.pos}-${i}`} position={pos} castShadow>
+              <cylinderGeometry args={[0.045, 0.045, ridgeHeight, 8]} />
+              <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.4} metalness={0.05} />
+            </mesh>
+          );
+        });
+      })}
+
       {/* Countertop overhang */}
       <mesh position={[cx, elevation + 0.1, cz]}>
         <boxGeometry args={[width + 0.2, 0.15, height + 0.2]} />
-        <meshStandardMaterial color="#e8e6df" roughness={0.3} />
+        <meshStandardMaterial color={COUNTER_TOP_COLOR} roughness={0.35} metalness={0.05} />
       </mesh>
+
+      {/* Warm LED strips — one under the overhang lip, one at the floor,
+          on every face — plus a real light at each so the glow actually
+          washes over the ridges and spills onto the carpet, not just a
+          bright decal. */}
+      {faces.map((face) => {
+        const faceOut = face.pos + face.outward * 0.03;
+        const lenArg = face.span;
+        const stripSize: [number, number, number] =
+          face.axis === "z" ? [lenArg, 0.04, 0.05] : [0.05, 0.04, lenArg];
+        const stripCenter: [number, number] = [face.spanStart + face.span / 2, faceOut];
+        const topStripPos: [number, number, number] =
+          face.axis === "z" ? [stripCenter[0], elevation - 0.03, stripCenter[1]] : [stripCenter[1], elevation - 0.03, stripCenter[0]];
+        const bottomStripPos: [number, number, number] =
+          face.axis === "z" ? [stripCenter[0], 0.06, stripCenter[1]] : [stripCenter[1], 0.06, stripCenter[0]];
+        const lightBase = face.pos + face.outward * 0.3;
+        const topLightPos: [number, number, number] =
+          face.axis === "z" ? [stripCenter[0], elevation - 0.15, lightBase] : [lightBase, elevation - 0.15, stripCenter[0]];
+        const bottomLightPos: [number, number, number] =
+          face.axis === "z" ? [stripCenter[0], 0.15, lightBase] : [lightBase, 0.15, stripCenter[0]];
+        return (
+          <group key={`led-${face.axis}-${face.pos}`}>
+            <mesh position={topStripPos}>
+              <boxGeometry args={stripSize} />
+              <meshBasicMaterial color={COUNTER_LED_COLOR} toneMapped={false} />
+            </mesh>
+            <mesh position={bottomStripPos}>
+              <boxGeometry args={stripSize} />
+              <meshBasicMaterial color={COUNTER_LED_COLOR} toneMapped={false} />
+            </mesh>
+            <pointLight position={topLightPos} intensity={14} distance={face.span + 2} decay={2} color={COUNTER_LED_COLOR} />
+            <pointLight position={bottomLightPos} intensity={14} distance={face.span + 2} decay={2} color={COUNTER_LED_COLOR} />
+          </group>
+        );
+      })}
     </group>
   );
 }
@@ -686,18 +876,18 @@ function Cabinet({ x, y, width, height, elevation }: { x: number; y: number; wid
     <group position={[cx, 0, cz]}>
       <mesh position={[0, bodyHeight / 2, 0]} castShadow>
         <boxGeometry args={[width, bodyHeight, height]} />
-        <meshStandardMaterial color="#EDEAE3" roughness={0.55} />
+        <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.55} />
       </mesh>
       {/* Top cap, matching the counter's countertop */}
       <mesh position={[0, bodyHeight + 0.08, 0]}>
         <boxGeometry args={[width + 0.15, 0.15, height + 0.15]} />
-        <meshStandardMaterial color="#e8e6df" roughness={0.3} />
+        <meshStandardMaterial color={COUNTER_TOP_COLOR} roughness={0.35} metalness={0.05} />
       </mesh>
       {/* Center seam between the two doors — front face points -X, into
           the room (the cabinet backs onto the glass wall on its +X side) */}
       <mesh position={[-width / 2 + 0.01, bodyHeight / 2, 0]}>
         <boxGeometry args={[0.02, bodyHeight - 0.3, 0.03]} />
-        <meshStandardMaterial color="#B8B3A6" />
+        <meshStandardMaterial color="#3a3128" />
       </mesh>
       {/* Two door handles */}
       {[-0.6, 0.6].map((dz) => (
@@ -771,18 +961,15 @@ export function WalkthroughScene() {
     <>
       <SceneSetup />
       <color attach="background" args={["#c9d3d6"]} />
-      {/* Environment provides realistic ambient light + reflections on the
-          glossy pool table wood and floor (an actual HDRI, not a flat
-          color) — this does most of the "looks real" work now, so the
-          manual lights below are dialed back to accents/fill only. */}
-      <Environment preset="apartment" />
-      <ambientLight intensity={0.6} />
-      <hemisphereLight args={["#ffffff", "#8a8a8a", 0.5]} />
-      <pointLight position={[8, 8, 10]} intensity={120} color="#39FF88" />
-      <pointLight position={[30, 8, 25]} intensity={120} color="#3DB2FF" />
-      <directionalLight position={[10, 15, 10]} intensity={1.2} castShadow />
+      {/* No general room lighting — Shreyas's call: every light in the
+          room is off except the TV/screen glow (added at each screen) and
+          the dedicated pool table lights (added at each table). This tiny
+          ambient is not a room light, just enough that unlit surfaces read
+          as very-dark-grey instead of computed pure black. */}
+      <ambientLight intensity={0.035} />
       <Floor />
       <Walls />
+      <Ceiling />
       <CeilingLights />
       <Beams3D />
       <EntranceThreshold />

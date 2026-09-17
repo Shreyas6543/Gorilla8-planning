@@ -195,11 +195,55 @@ look direction — movement stays on the horizontal plane regardless of look
 pitch), `src/components/walkthrough/WalkthroughScene.tsx` (the actual scene:
 floor as a `THREE.Shape` extruded from `OUTER_POLYGON`, walls as boxes per
 `WALL_SEGMENTS` — all axis-aligned in this floor plan so no rotation math
-was needed, glass wall gets a transparent/transmissive material, the
-entrance segment is skipped entirely so it's a real walkable gap, beams as
+was needed, the main glass wall AND the entrance both get the same tinted
+grey/10%-transmission glass material (`buildWalls()` in `room3d.ts` flags
+`isGlass` for any segment labeled "glass" or "entrance" — the entrance is
+a glass shutter/door, not a bare opening, per Shreyas's call), beams as
 thin columns, furniture reads straight from `config/layout.ts`). Mouse-look
-via `@react-three/drei`'s `PointerLockControls`; only the outer room
-boundary has collision (no furniture collision yet — known simplification).
+via `@react-three/drei`'s `PointerLockControls`; collision (`isInsideRoom`)
+is purely polygon-based and never consults these wall meshes, so walking
+through the entrance's glass still works exactly like walking through any
+other glass/furniture in this sim (only the outer room boundary has
+collision at all — no furniture collision yet — known simplification).
+
+**Base interior (finalized, "next interior" variants build on this)**:
+Shreyas signed off on this as the interior's dark-grey base look. In
+`WalkthroughScene.tsx`:
+- `CARPET_COLOR` (floor) and `WALL_COLOR` (walls + a new `Ceiling()` mesh,
+  same footprint as `Floor()` but at `WALL_HEIGHT`) are both dark grey, but
+  deliberately different shades — carpet is darker/more matte (higher
+  roughness) than the wall/ceiling grey, so the surfaces still read as
+  distinct materials rather than one flat box.
+- Glass walls use `GLASS_COLOR` (grey) with `transmission: 0.1` — the real
+  glass will get outward-facing ad-sticker vinyl, so from inside it should
+  read as ~10% see-through tinted glass, not clear. Mullions are a dark
+  metal (`MULLION_COLOR`), no longer the old light-beige tone.
+- **All general room lighting was removed on purpose** (no `ambientLight`
+  beyond a near-zero 0.035 fill just to keep unlit surfaces from computing
+  to literal pure black, no `hemisphereLight`, no accent `pointLight`s, no
+  `Environment` HDRI, no `directionalLight`). The only lit fixtures are:
+  (1) TV/PS5 screens (`TVPanel()`) — an unlit glowing screen quad plus a
+  real `pointLight` so it spills onto the wall/floor around it, and (2) a
+  dedicated pool table light per table (`PoolTableLight()` — hanging shade
+  + point lights, warm color, `distance`-limited so it lights the table,
+  not the whole room) and the racing sim's monitor bank (spill light added
+  next to the `RacingScreen` group). `CeilingLights()` fixtures are still
+  physically modeled but switched off (dark, non-emissive) — the room has
+  ceiling lights, they're just off, not removed. Don't reintroduce a
+  general ambient/hemisphere/directional light here without checking with
+  Shreyas first — the near-black-except-screens look is intentional, not a
+  bug to "fix" by brightening things back up.
+- Add-on to the "only these fixtures are lit" rule above: the reception
+  `Counter()` is also a dedicated light source now, matching a reference
+  photo Shreyas sent (a "GAME X" reception desk — near-black reeded/fluted
+  wood front, warm LED strip glowing under the countertop lip and another
+  at the floor). Ridges are real geometry (a row of thin cylinders per
+  face, not a texture), applied to **all 4 sides** since this item can be
+  square (`width === height`), so which pair of opposite faces ends up
+  facing the room after rotation isn't knowable in the component — see
+  `CounterFace` in `Counter()`. `Cabinet()`'s body/cap colors were darkened
+  to match (`COUNTER_BODY_COLOR`/`COUNTER_TOP_COLOR`) since the code
+  already ties the two together as "one deliberate nook."
 
 **Critical version pin — do not "helpfully" upgrade React on this project**:
 `@react-three/fiber` (even its latest 10.0.0 canary builds, checked
