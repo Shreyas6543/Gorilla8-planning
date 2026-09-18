@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from "./supabaseClient";
 // the Design page (pool table, PS5 station, ... plus anything they create).
 // Distinct from furniture_layout, which stores actual placed INSTANCES.
 
-export type RenderType = "pool" | "ps5" | "racingSim" | "counter" | "cabinet" | "generic";
+export type RenderType = "pool" | "ps5" | "racingSim" | "counter" | "cabinet" | "sofaUnit" | "plantPot" | "generic";
 
 export interface CatalogEntry {
   id: string;
@@ -25,6 +25,13 @@ export const BUILTIN_CATALOG: CatalogEntry[] = [
   { id: "racing-sim", name: "Racing Simulator", builtin: true, renderType: "racingSim", defaultWidth: 6, defaultDepth: 8, defaultElevation: 4 },
   { id: "counter", name: "Counter", builtin: true, renderType: "counter", defaultWidth: 3, defaultDepth: 5, defaultElevation: 3.2 },
   { id: "cabinet", name: "Storage Cabinet", builtin: true, renderType: "cabinet", defaultWidth: 3, defaultDepth: 3, defaultElevation: 6 },
+  // Sofa + the portrait hung above it + the gallery spotlight that lights
+  // both — one combined unit, per Shreyas's request ("all three things
+  // come as one unit"). Depth 2.5ft is just the sofa's own footprint; the
+  // portrait/spotlight mount on the wall right behind it, not sticking
+  // out further.
+  { id: "sofa-unit", name: "Sofa Unit", builtin: true, renderType: "sofaUnit", defaultWidth: 6, defaultDepth: 2.5, defaultElevation: 8 },
+  { id: "plant-pot", name: "Plant Pot", builtin: true, renderType: "plantPot", defaultWidth: 1.5, defaultDepth: 1.5, defaultElevation: 2.8 },
 ];
 
 interface CatalogRow {
@@ -83,8 +90,10 @@ function saveLocalBackup(entries: CatalogEntry[]) {
   }
 }
 
-// Loads the catalog, seeding the 5 builtin types the first time the table
-// is empty (idempotent — safe to call on every app load).
+// Loads the catalog, seeding any BUILTIN_CATALOG entries missing from the
+// table — not just on a totally empty table, but any time a new builtin
+// (like sofa-unit/plant-pot) gets added to the code after the table
+// already has rows from earlier builtins. Idempotent either way.
 export async function loadCatalog(): Promise<CatalogEntry[]> {
   if (!isSupabaseConfigured || !supabase) {
     return loadLocalBackup() ?? BUILTIN_CATALOG;
@@ -92,13 +101,17 @@ export async function loadCatalog(): Promise<CatalogEntry[]> {
   try {
     const { data, error } = await supabase.from("furniture_catalog").select("*");
     if (error) throw error;
-    if (!data || data.length === 0) {
-      const { error: insertError } = await supabase.from("furniture_catalog").insert(BUILTIN_CATALOG.map(toRow));
+    const existingIds = new Set((data ?? []).map((row) => (row as CatalogRow).id));
+    const missingBuiltins = BUILTIN_CATALOG.filter((entry) => !existingIds.has(entry.id));
+    if (missingBuiltins.length > 0) {
+      const { error: insertError } = await supabase.from("furniture_catalog").insert(missingBuiltins.map(toRow));
       if (insertError) throw insertError;
+    }
+    if (!data || data.length === 0) {
       saveLocalBackup(BUILTIN_CATALOG);
       return BUILTIN_CATALOG;
     }
-    const entries = (data as CatalogRow[]).map(fromRow);
+    const entries = [...(data as CatalogRow[]).map(fromRow), ...missingBuiltins];
     saveLocalBackup(entries);
     return entries;
   } catch (err) {

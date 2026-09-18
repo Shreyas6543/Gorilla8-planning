@@ -8,7 +8,7 @@ create table furniture_catalog (
   id text primary key,
   name text not null,
   builtin boolean not null default false,
-  render_type text not null, -- 'pool' | 'ps5' | 'racingSim' | 'counter' | 'cabinet' | 'generic'
+  render_type text not null, -- 'pool' | 'ps5' | 'racingSim' | 'counter' | 'cabinet' | 'sofaUnit' | 'plantPot' | 'generic'
   default_width numeric not null,
   default_depth numeric not null,
   default_elevation numeric not null,

@@ -940,6 +940,175 @@ function GenericObject({
   );
 }
 
+// SpotLight aims at its `target` (a separate Object3D), not via rotation
+// like a mesh — three.js computes the light's direction from position to
+// target.position, so the target has to actually exist and have its
+// matrix updated. This is the sofa unit's gallery spotlight: unlike the
+// LED strips elsewhere in this scene, Shreyas explicitly wants this one
+// to visibly spread over the whole nook, so a real, fairly wide-angle
+// SpotLight is the right tool here (not something to avoid).
+function AimedSpotLight({
+  position,
+  target,
+  angle,
+  penumbra,
+  distance,
+  intensity,
+  color,
+}: {
+  position: [number, number, number];
+  target: [number, number, number];
+  angle: number;
+  penumbra: number;
+  distance: number;
+  intensity: number;
+  color: string;
+}) {
+  const ref = useRef<THREE.SpotLight>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.target.position.set(target[0], target[1], target[2]);
+    ref.current.target.updateMatrixWorld();
+  }, [target]);
+  return (
+    <spotLight
+      ref={ref}
+      position={position}
+      angle={angle}
+      penumbra={penumbra}
+      distance={distance}
+      intensity={intensity}
+      decay={2}
+      color={color}
+      castShadow
+    />
+  );
+}
+
+// Sofa + the portrait hung above it + the gallery spotlight that lights
+// both — one combined unit, per Shreyas's request ("all three things
+// come as one unit"). The sofa sits with its back to the far wall
+// (farZ, same convention as every other wall-mounted piece in this
+// file); the portrait and spotlight mount there too. Scales vertically
+// with `elevation`, same trick as PS5Station/RacingSim, so resizing it
+// on the Design page keeps everything proportional.
+function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
+  const cx = x + width / 2;
+  const nearZ = y;
+  const farZ = y + height;
+  const backZ = farZ - 0.15; // sofa's own back, right against the wall
+  const verticalScale = elevation / defaultElevationFor("sofaUnit");
+
+  const texture = useTexture("/textures/deadpool-poster.png");
+  useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }, [texture]);
+
+  const seatY = 1.1;
+  const seatDepth = height - 0.3;
+  const armWidth = 0.5;
+  const portraitWidth = Math.min(width * 0.4, 2.2);
+  const portraitHeight = portraitWidth * (932 / 664); // matches the actual image's aspect ratio
+  const portraitY = seatY + 2.3;
+
+  return (
+    <group scale={[1, verticalScale, 1]}>
+      {/* Base cushion */}
+      <mesh position={[cx, seatY / 2, nearZ + seatDepth / 2]} castShadow>
+        <boxGeometry args={[width - armWidth * 2, seatY, seatDepth]} />
+        <meshStandardMaterial color="#3a3d4a" roughness={0.75} />
+      </mesh>
+      {/* Backrest */}
+      <mesh position={[cx, seatY + 0.75, backZ - 0.15]} castShadow>
+        <boxGeometry args={[width - armWidth * 2, 1.5, 0.3]} />
+        <meshStandardMaterial color="#3a3d4a" roughness={0.75} />
+      </mesh>
+      {/* Armrests */}
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[cx + side * (width / 2 - armWidth / 2), seatY / 2 + 0.35, nearZ + seatDepth / 2]} castShadow>
+          <boxGeometry args={[armWidth, seatY + 0.7, seatDepth]} />
+          <meshStandardMaterial color="#2f323d" roughness={0.7} />
+        </mesh>
+      ))}
+      {/* Seat cushion seam */}
+      {[-0.25, 0.25].map((f) => (
+        <mesh key={f} position={[cx + f * (width - armWidth * 2) * 0.5, seatY + 0.08, nearZ + seatDepth * 0.55]}>
+          <boxGeometry args={[(width - armWidth * 2) * 0.48, 0.18, seatDepth * 0.75]} />
+          <meshStandardMaterial color="#454858" roughness={0.8} />
+        </mesh>
+      ))}
+
+      {/* Portrait, mounted on the wall above the sofa */}
+      <mesh position={[cx, portraitY, backZ - 0.01]}>
+        <planeGeometry args={[portraitWidth + 0.15, portraitHeight + 0.15]} />
+        <meshStandardMaterial color="#141416" roughness={0.4} metalness={0.3} />
+      </mesh>
+      <mesh position={[cx, portraitY, backZ - 0.02]}>
+        <planeGeometry args={[portraitWidth, portraitHeight]} />
+        <meshStandardMaterial map={texture} roughness={0.5} />
+      </mesh>
+
+      {/* Gallery spotlight fixture — a small ceiling-mounted downlight
+          housing, angled onto the portrait */}
+      <group position={[cx, WALL_HEIGHT - 0.3, backZ - 1.2]} rotation={[0.55, 0, 0]}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.18, 0.22, 0.35, 12]} />
+          <meshStandardMaterial color="#1a1a1c" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, -0.18, 0]}>
+          <circleGeometry args={[0.16, 12]} />
+          <meshBasicMaterial color="#FFF3D6" toneMapped={false} />
+        </mesh>
+      </group>
+      <AimedSpotLight
+        position={[cx, WALL_HEIGHT - 0.3, backZ - 1.2]}
+        target={[cx, portraitY, backZ]}
+        angle={0.6}
+        penumbra={0.85}
+        distance={12}
+        intensity={55}
+        color="#FFEBC2"
+      />
+    </group>
+  );
+}
+
+// A simple potted plant — pot + a rounded cluster of foliage. Small
+// bespoke shape rather than a plain box, since this is a permanent
+// catalog item, not a one-off admin-added generic.
+function PlantPot({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
+  const cx = x + width / 2;
+  const cz = y + height / 2;
+  const potHeight = elevation * 0.45;
+  const potRadiusTop = Math.min(width, height) / 2;
+  const potRadiusBottom = potRadiusTop * 0.75;
+  const foliageY = potHeight + elevation * 0.28;
+  const leafOffsets: [number, number, number][] = [
+    [-0.3, 0.15, 0.2],
+    [0.28, 0.1, -0.22],
+    [0.05, 0.32, 0.18],
+    [-0.15, 0.05, -0.28],
+  ];
+  return (
+    <group position={[cx, 0, cz]}>
+      <mesh position={[0, potHeight / 2, 0]} castShadow>
+        <cylinderGeometry args={[potRadiusTop, potRadiusBottom, potHeight, 16]} />
+        <meshStandardMaterial color="#8a4a32" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, foliageY, 0]} castShadow>
+        <sphereGeometry args={[potRadiusTop * 1.1, 10, 8]} />
+        <meshStandardMaterial color="#2E7D32" roughness={0.85} />
+      </mesh>
+      {leafOffsets.map((o, i) => (
+        <mesh key={i} position={[o[0] * potRadiusTop * 2, foliageY + o[1] * elevation, o[2] * potRadiusTop * 2]} castShadow>
+          <sphereGeometry args={[potRadiusTop * 0.55, 8, 6]} />
+          <meshStandardMaterial color="#3a9142" roughness={0.85} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
 // GORILLA 8 neon sign, mounted on the glass wall directly behind the
 // counter (the counter's back edge sits right up against it — only 0.2ft
 // gap) at Shreyas's specced height and size. The source image is already
@@ -989,6 +1158,8 @@ export function WalkthroughScene() {
   const racingSims = items.filter((i) => i.renderType === "racingSim");
   const counters = items.filter((i) => i.renderType === "counter");
   const cabinets = items.filter((i) => i.renderType === "cabinet");
+  const sofaUnits = items.filter((i) => i.renderType === "sofaUnit");
+  const plantPots = items.filter((i) => i.renderType === "plantPot");
   const generics = items.filter((i) => i.renderType === "generic");
   // Logo mounts behind whichever item is actually the counter right now —
   // reads its live position (Design page), not the hardcoded default,
@@ -1043,6 +1214,16 @@ export function WalkthroughScene() {
       {cabinets.map((c) => (
         <RotatedFootprint key={c.id} item={c}>
           {(x, y) => <Cabinet x={x} y={y} width={c.width} height={c.height} elevation={c.elevation} />}
+        </RotatedFootprint>
+      ))}
+      {sofaUnits.map((s) => (
+        <RotatedFootprint key={s.id} item={s}>
+          {(x, y) => <SofaUnit x={x} y={y} width={s.width} height={s.height} elevation={s.elevation} />}
+        </RotatedFootprint>
+      ))}
+      {plantPots.map((p) => (
+        <RotatedFootprint key={p.id} item={p}>
+          {(x, y) => <PlantPot x={x} y={y} width={p.width} height={p.height} elevation={p.elevation} />}
         </RotatedFootprint>
       ))}
       {generics.map((g) => (

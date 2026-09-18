@@ -26,6 +26,8 @@ const TYPE_COLOR: Record<RenderType, string> = {
   racingSim: "#FF9F43",
   counter: "#9AA4B2",
   cabinet: "#B88A4A",
+  sofaUnit: "#7A2C20",
+  plantPot: "#2E7D32",
   generic: "#8899AA",
 };
 

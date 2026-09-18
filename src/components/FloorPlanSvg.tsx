@@ -13,6 +13,8 @@ const TYPE_STYLE: Record<RenderType, { fill: string; stroke: string; textFill: s
   racingSim: { fill: "rgba(255,159,67,0.2)", stroke: "#FF9F43", textFill: "#FF9F43", fontSize: 0.7 },
   counter: { fill: "rgba(154,164,178,0.35)", stroke: "#9AA4B2", textFill: "#F2F4F7", fontSize: 0.7 },
   cabinet: { fill: "rgba(184,138,74,0.3)", stroke: "#B88A4A", textFill: "#F2F4F7", fontSize: 0.55 },
+  sofaUnit: { fill: "rgba(122,44,32,0.3)", stroke: "#7A2C20", textFill: "#F2F4F7", fontSize: 0.55 },
+  plantPot: { fill: "rgba(46,125,50,0.3)", stroke: "#2E7D32", textFill: "#F2F4F7", fontSize: 0.5 },
   generic: GENERIC_STYLE,
 };
 
@@ -22,6 +24,8 @@ const TYPE_DISPLAY_LABEL: Record<RenderType, string | null> = {
   racingSim: "RACING SIM",
   counter: "COUNTER",
   cabinet: "CABINET",
+  sofaUnit: "SOFA UNIT",
+  plantPot: "PLANT POT",
   generic: null, // uses the item's own label
 };
 
