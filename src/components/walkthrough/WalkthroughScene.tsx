@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
-import { useThree } from "@react-three/fiber";
+import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { PointerLockControls, useGLTF, useTexture, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
@@ -942,11 +942,19 @@ function GenericObject({
 
 // SpotLight aims at its `target` (a separate Object3D), not via rotation
 // like a mesh — three.js computes the light's direction from position to
-// target.position, so the target has to actually exist and have its
-// matrix updated. This is the sofa unit's gallery spotlight: unlike the
-// LED strips elsewhere in this scene, Shreyas explicitly wants this one
-// to visibly spread over the whole nook, so a real, fairly wide-angle
-// SpotLight is the right tool here (not something to avoid).
+// target.position. `light.target` is parentless by default, so setting
+// its position directly (as this used to do) places it in raw WORLD
+// coordinates — wrong here, since this light lives inside SofaUnit's
+// locally-offset/scaled group, and `position`/`target` are both passed
+// in that same local frame. Rendering the target as an actual child
+// <object3D> in the same group instead lets three.js propagate the
+// group's transform to it automatically, exactly like it does for the
+// light itself, so the two stay correctly aimed at each other no matter
+// how the group is placed/rotated/scaled. This is the sofa unit's
+// gallery spotlight: unlike the LED strips elsewhere in this scene,
+// Shreyas explicitly wants this one to visibly spread over the whole
+// nook, so a real, fairly wide-angle SpotLight is the right tool here
+// (not something to avoid).
 function AimedSpotLight({
   position,
   target,
@@ -955,6 +963,7 @@ function AimedSpotLight({
   distance,
   intensity,
   color,
+  decay = 2,
 }: {
   position: [number, number, number];
   target: [number, number, number];
@@ -963,94 +972,83 @@ function AimedSpotLight({
   distance: number;
   intensity: number;
   color: string;
+  decay?: number;
 }) {
-  const ref = useRef<THREE.SpotLight>(null);
+  const lightRef = useRef<THREE.SpotLight>(null);
+  const targetRef = useRef<THREE.Object3D>(null);
   useEffect(() => {
-    if (!ref.current) return;
-    ref.current.target.position.set(target[0], target[1], target[2]);
-    ref.current.target.updateMatrixWorld();
-  }, [target]);
+    if (!lightRef.current || !targetRef.current) return;
+    lightRef.current.target = targetRef.current;
+  }, []);
   return (
-    <spotLight
-      ref={ref}
-      position={position}
-      angle={angle}
-      penumbra={penumbra}
-      distance={distance}
-      intensity={intensity}
-      decay={2}
-      color={color}
-      castShadow
-    />
+    <>
+      <spotLight
+        ref={lightRef}
+        position={position}
+        angle={angle}
+        penumbra={penumbra}
+        distance={distance}
+        intensity={intensity}
+        decay={decay}
+        color={color}
+        castShadow
+      />
+      <object3D ref={targetRef} position={target} />
+    </>
   );
 }
 
-// Sofa + the portrait hung above it + the gallery spotlight that lights
-// both — one combined unit, per Shreyas's request ("all three things
-// come as one unit"). The sofa sits with its back to the far wall
-// (farZ, same convention as every other wall-mounted piece in this
-// file); the portrait and spotlight mount there too. Scales vertically
-// with `elevation`, same trick as PS5Station/RacingSim, so resizing it
-// on the Design page keeps everything proportional.
-function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
-  const cx = x + width / 2;
-  const nearZ = y;
-  const farZ = y + height;
-  const backZ = farZ - 0.15; // sofa's own back, right against the wall
-  const verticalScale = elevation / defaultElevationFor("sofaUnit");
+// Exactly the room's bean bag material — beanbag_raw.glb's baseColorFactor
+// [0.698, 0.301, 0.062] (linear, per the glTF spec) converted to the sRGB
+// hex three.js expects from a `color` prop, plus that material's own
+// roughness 1 / metalness 0. Every sofa surface uses all three verbatim:
+// an earlier version shaded the armrests darker and the seams lighter for
+// depth, which is exactly why the sofa read as a different color than the
+// bean bags — the armrests are a big chunk of what you actually see.
+// Shape now comes from lighting and geometry, not from tinting.
+const SOFA_COLOR = "#D99546";
+const SOFA_ROUGHNESS = 1;
+const SOFA_METALNESS = 0;
 
-  const texture = useTexture("/textures/deadpool-poster.png");
-  useMemo(() => {
-    texture.colorSpace = THREE.SRGBColorSpace;
-  }, [texture]);
-
-  const seatY = 1.1;
-  const seatDepth = height - 0.3;
-  const armWidth = 0.5;
-  const portraitWidth = Math.min(width * 0.4, 2.2);
-  const portraitHeight = portraitWidth * (932 / 664); // matches the actual image's aspect ratio
-  const portraitY = seatY + 2.3;
-
+// One framed print + its own ceiling-mounted gallery spotlight, at a given
+// x position along the wall behind the sofa (all three prints share the
+// same wall Z-depth and height — a straight "gallery row", not staggered).
+// Extracted out of SofaUnit so the same frame+light pairing can repeat for
+// the left/center/right posters without triplicating the JSX.
+function GalleryPortrait({
+  portraitX,
+  portraitY,
+  backZ,
+  texture,
+}: {
+  portraitX: number;
+  portraitY: number;
+  backZ: number;
+  texture: THREE.Texture;
+}) {
+  const portraitWidth = 13 / 12;
+  const portraitHeight = 19 / 12;
   return (
-    <group scale={[1, verticalScale, 1]}>
-      {/* Base cushion */}
-      <mesh position={[cx, seatY / 2, nearZ + seatDepth / 2]} castShadow>
-        <boxGeometry args={[width - armWidth * 2, seatY, seatDepth]} />
-        <meshStandardMaterial color="#3a3d4a" roughness={0.75} />
-      </mesh>
-      {/* Backrest */}
-      <mesh position={[cx, seatY + 0.75, backZ - 0.15]} castShadow>
-        <boxGeometry args={[width - armWidth * 2, 1.5, 0.3]} />
-        <meshStandardMaterial color="#3a3d4a" roughness={0.75} />
-      </mesh>
-      {/* Armrests */}
-      {[-1, 1].map((side) => (
-        <mesh key={side} position={[cx + side * (width / 2 - armWidth / 2), seatY / 2 + 0.35, nearZ + seatDepth / 2]} castShadow>
-          <boxGeometry args={[armWidth, seatY + 0.7, seatDepth]} />
-          <meshStandardMaterial color="#2f323d" roughness={0.7} />
-        </mesh>
-      ))}
-      {/* Seat cushion seam */}
-      {[-0.25, 0.25].map((f) => (
-        <mesh key={f} position={[cx + f * (width - armWidth * 2) * 0.5, seatY + 0.08, nearZ + seatDepth * 0.55]}>
-          <boxGeometry args={[(width - armWidth * 2) * 0.48, 0.18, seatDepth * 0.75]} />
-          <meshStandardMaterial color="#454858" roughness={0.8} />
-        </mesh>
-      ))}
-
-      {/* Portrait, mounted on the wall above the sofa */}
-      <mesh position={[cx, portraitY, backZ - 0.01]}>
+    <>
+      {/* Portrait, mounted on the wall. A plane's front face (texture-
+          visible side) is +Z by default, which here would point into the
+          wall, away from the room — rotated 180° so it actually faces the
+          seat/viewer side. */}
+      <mesh position={[portraitX, portraitY, backZ - 0.01]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[portraitWidth + 0.15, portraitHeight + 0.15]} />
         <meshStandardMaterial color="#141416" roughness={0.4} metalness={0.3} />
       </mesh>
-      <mesh position={[cx, portraitY, backZ - 0.02]}>
+      <mesh position={[portraitX, portraitY, backZ - 0.02]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[portraitWidth, portraitHeight]} />
         <meshStandardMaterial map={texture} roughness={0.5} />
       </mesh>
 
-      {/* Gallery spotlight fixture — a small ceiling-mounted downlight
-          housing, angled onto the portrait */}
-      <group position={[cx, WALL_HEIGHT - 0.3, backZ - 1.2]} rotation={[0.55, 0, 0]}>
+      {/* Gallery spotlight — the ceiling-mounted housing angled down at
+          the portrait, which is the version Shreyas liked: it throws a
+          real visible wash across the wall and nook. A small picture
+          light sitting just above the frame (tried in between) lit only
+          the frame itself and read as a dim dot, not a spotlight. */}
+      <group position={[portraitX, WALL_HEIGHT - 0.3, backZ - 1.2]} rotation={[0.55, 0, 0]}>
         <mesh castShadow>
           <cylinderGeometry args={[0.18, 0.22, 0.35, 12]} />
           <meshStandardMaterial color="#1a1a1c" metalness={0.5} roughness={0.4} />
@@ -1061,14 +1059,89 @@ function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; wi
         </mesh>
       </group>
       <AimedSpotLight
-        position={[cx, WALL_HEIGHT - 0.3, backZ - 1.2]}
-        target={[cx, portraitY, backZ]}
+        position={[portraitX, WALL_HEIGHT - 0.3, backZ - 1.2]}
+        target={[portraitX, portraitY, backZ]}
         angle={0.6}
         penumbra={0.85}
         distance={12}
         intensity={55}
         color="#FFEBC2"
       />
+    </>
+  );
+}
+
+// Sofa + a 3-print gallery wall above it (center + one either side) + a
+// gallery spotlight per print — one combined unit, per Shreyas's request
+// ("all three things come as one unit"). The sofa sits with its back to
+// the far wall (farZ, same convention as every other wall-mounted piece
+// in this file); the portraits and spotlights mount there too. Scales
+// vertically with `elevation`, same trick as PS5Station/RacingSim, so
+// resizing it on the Design page keeps everything proportional.
+function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; width: number; height: number; elevation: number }) {
+  const cx = x + width / 2;
+  const nearZ = y;
+  const farZ = y + height;
+  const backZ = farZ - 0.15; // sofa's own back, right against the wall
+  const verticalScale = elevation / defaultElevationFor("sofaUnit");
+
+  // Center print is the original Deadpool "BYE BYE" poster; the two new
+  // ones Shreyas added ("minion deadpool 1/2") flank it, same physical
+  // frame size, same wall height — a straight gallery row.
+  const [centerTexture, leftTexture, rightTexture] = useTexture([
+    "/textures/deadpool-poster.png",
+    "/textures/minion-deadpool-1.png",
+    "/textures/minion-deadpool-2.png",
+  ]);
+  useMemo(() => {
+    [centerTexture, leftTexture, rightTexture].forEach((t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+    });
+  }, [centerTexture, leftTexture, rightTexture]);
+
+  const seatY = 1.1;
+  const seatDepth = height - 0.3;
+  const armWidth = 0.5;
+  const backrestTopY = seatY + 0.75 + 1.5 / 2; // backrest center (seatY+0.75) + half its own height (1.5)
+  const PORTRAIT_GAP_FT = 1; // ~12in clear wall between the sofa back and the frames
+  const PORTRAIT_RAISE_FT = 2; // Shreyas: move the gallery row up 2ft from its original height
+  const portraitHeight = 19 / 12;
+  const portraitY = backrestTopY + PORTRAIT_GAP_FT + portraitHeight / 2 + PORTRAIT_RAISE_FT;
+  // Center-to-center spacing along the wall — wide enough that the 13in
+  // frames (plus their backing mat) never touch, narrow enough that all
+  // three still sit within the sofa's own 6ft-wide footprint.
+  const GALLERY_SPACING_FT = 2.3;
+
+  return (
+    <group scale={[1, verticalScale, 1]}>
+      {/* Base cushion */}
+      <mesh position={[cx, seatY / 2, nearZ + seatDepth / 2]} castShadow>
+        <boxGeometry args={[width - armWidth * 2, seatY, seatDepth]} />
+        <meshStandardMaterial color={SOFA_COLOR} roughness={SOFA_ROUGHNESS} metalness={SOFA_METALNESS} />
+      </mesh>
+      {/* Backrest */}
+      <mesh position={[cx, seatY + 0.75, backZ - 0.15]} castShadow>
+        <boxGeometry args={[width - armWidth * 2, 1.5, 0.3]} />
+        <meshStandardMaterial color={SOFA_COLOR} roughness={SOFA_ROUGHNESS} metalness={SOFA_METALNESS} />
+      </mesh>
+      {/* Armrests */}
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[cx + side * (width / 2 - armWidth / 2), seatY / 2 + 0.35, nearZ + seatDepth / 2]} castShadow>
+          <boxGeometry args={[armWidth, seatY + 0.7, seatDepth]} />
+          <meshStandardMaterial color={SOFA_COLOR} roughness={SOFA_ROUGHNESS} metalness={SOFA_METALNESS} />
+        </mesh>
+      ))}
+      {/* Seat cushion seam */}
+      {[-0.25, 0.25].map((f) => (
+        <mesh key={f} position={[cx + f * (width - armWidth * 2) * 0.5, seatY + 0.08, nearZ + seatDepth * 0.55]}>
+          <boxGeometry args={[(width - armWidth * 2) * 0.48, 0.18, seatDepth * 0.75]} />
+          <meshStandardMaterial color={SOFA_COLOR} roughness={SOFA_ROUGHNESS} metalness={SOFA_METALNESS} />
+        </mesh>
+      ))}
+
+      <GalleryPortrait portraitX={cx - GALLERY_SPACING_FT} portraitY={portraitY} backZ={backZ} texture={leftTexture} />
+      <GalleryPortrait portraitX={cx} portraitY={portraitY} backZ={backZ} texture={centerTexture} />
+      <GalleryPortrait portraitX={cx + GALLERY_SPACING_FT} portraitY={portraitY} backZ={backZ} texture={rightTexture} />
     </group>
   );
 }
@@ -1150,7 +1223,220 @@ function EntranceThreshold() {
   );
 }
 
-export function WalkthroughScene() {
+// Big Deadpool poster on the 16.5ft wall (WALL_SEGMENTS[0], from [0,0] to
+// [16.5,0] — a horizontal wall running along X at z=0). 57x40in per
+// Shreyas's spec; the source image is portrait (830x1246px, ~2:3), so
+// that's read as height=57in/width=40in, not the other way round — a
+// 57-wide/40-tall frame would badly stretch a portrait image. Deliberately
+// no frame/mat and no spotlight — Shreyas's call: this wall already has
+// enough ambient light and he'll add different fixtures for it later, so
+// this is just the bare print for now, unlike the sofa's gallery prints.
+const WALL16_POSTER_WIDTH_FT = 40 / 12;
+const WALL16_POSTER_HEIGHT_FT = 57 / 12;
+function Wall16Poster() {
+  const texture = useTexture("/textures/deadpool-poster-big.png");
+  useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }, [texture]);
+  const wallMidX = 16.5 / 2; // horizontally centered on the wall's full 16.5ft run
+  // buildWalls() centers this wall's box on z=0 with thickness 0.3, so its
+  // room-facing inner face sits at z=+0.15 — mount just off that, and skip
+  // rotation: the room interior is on the +Z side of this wall, which is
+  // exactly the plane's default front-facing side (unlike the sofa's back
+  // wall, where the room was on the -Z side and needed a 180° flip).
+  const wallZ = 0.17;
+  return (
+    <mesh position={[wallMidX, WALL_HEIGHT / 2, wallZ]}>
+      <planeGeometry args={[WALL16_POSTER_WIDTH_FT, WALL16_POSTER_HEIGHT_FT]} />
+      <meshStandardMaterial map={texture} roughness={0.5} />
+    </mesh>
+  );
+}
+
+// Two big wall posters on the 36.5ft wall (WALL_SEGMENTS[9], running
+// along Z at x=0 — the wall to the left of the big Deadpool poster when
+// facing it), each full-bleed rectangles (no background to remove).
+// Both share the same 39in height (Shreyas's spec for poster one; poster
+// two matches it so the two sit in a level gallery row) — width for each
+// is derived from that image's own exact pixel aspect ratio rather than
+// reusing a fixed number, so neither stretches.
+//
+// Shreyas swapped which poster sits in the near (corner-side) slot: poster
+// two (Batman) took over poster one's original spot (near edge 5ft past
+// the Plant Pot at the (0,0) corner), and poster one (Spider-Man) moved
+// further along, 5ft past poster two's far edge — plus a 1ft-up vertical
+// nudge Shreyas asked for on poster one specifically, not poster two.
+//
+// Rotation: this wall's inner face is on the wall's +X side (room
+// interior is at x>0.15, unlike the glass wall at x=36.7 where the room
+// is on the -X side) — the mirror image of Gorilla8Logo's case. A plane's
+// local +X (its texture's right edge) needs to land on world -Z here for
+// a poster to read un-mirrored to someone facing this wall (facing -X,
+// their right hand points -Z) — that's rotation.y = +π/2, the opposite
+// sign from Gorilla8Logo's -π/2.
+const WALL_POSTER_HEIGHT_FT = 39 / 12;
+const WALL_POSTER_GAP_FT = 5; // gap between the (0,0) corner/Plant Pot and poster two, and again between poster two and poster one
+
+const POSTER2_WIDTH_FT = WALL_POSTER_HEIGHT_FT * (1424 / 690); // big-wall-poster-2.png's own aspect ratio
+const POSTER2_CENTER_Z = WALL_POSTER_GAP_FT + POSTER2_WIDTH_FT / 2;
+
+const POSTER1_WIDTH_FT = WALL_POSTER_HEIGHT_FT * (2260 / 1130); // big-wall-poster-1.png's own aspect ratio
+const POSTER1_CENTER_Z = WALL_POSTER_GAP_FT + POSTER2_WIDTH_FT + WALL_POSTER_GAP_FT + POSTER1_WIDTH_FT / 2;
+
+// Both posters sit at the same height now — Shreyas originally raised
+// just poster one by 1ft, then asked for poster two to come up to match.
+const POSTER1_CENTER_Y = WALL_HEIGHT / 2 + 1;
+const POSTER2_CENTER_Y = POSTER1_CENTER_Y;
+
+function WallPoster({ texturePath, widthFt, centerZ, centerY }: { texturePath: string; widthFt: number; centerZ: number; centerY: number }) {
+  const texture = useTexture(texturePath);
+  useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }, [texture]);
+  const wallX = 0.17; // just off this wall's inner face (centered on x=0, thickness 0.3 -> face at x=0.15)
+  return (
+    <mesh position={[wallX, centerY, centerZ]} rotation={[0, Math.PI / 2, 0]}>
+      <planeGeometry args={[widthFt, WALL_POSTER_HEIGHT_FT]} />
+      <meshStandardMaterial map={texture} roughness={0.5} />
+    </mesh>
+  );
+}
+
+// Ceiling spotlight aimed at one of the big wall posters — same fixture
+// recipe as the sofa's gallery spotlight (angled housing + AimedSpotLight),
+// pulled 1.2ft off the wall into the room so the fixture itself isn't
+// embedded in it, same as that one's offset from its own wall.
+function WallPosterSpotlight({ centerZ, centerY }: { centerZ: number; centerY: number }) {
+  const fixturePos: [number, number, number] = [1.37, WALL_HEIGHT - 0.3, centerZ];
+  const target: [number, number, number] = [0.17, centerY, centerZ];
+  return (
+    <>
+      <group position={fixturePos} rotation={[0, 0, -0.26]}>
+        <mesh castShadow>
+          <cylinderGeometry args={[0.18, 0.22, 0.35, 12]} />
+          <meshStandardMaterial color="#1a1a1c" metalness={0.5} roughness={0.4} />
+        </mesh>
+        <mesh position={[0, -0.18, 0]}>
+          <circleGeometry args={[0.16, 12]} />
+          <meshBasicMaterial color="#FFF3D6" toneMapped={false} />
+        </mesh>
+      </group>
+      <AimedSpotLight position={fixturePos} target={target} angle={0.6} penumbra={0.85} distance={12} intensity={65} color="#FFEBC2" />
+    </>
+  );
+}
+
+// A colored accent light tucked into a wall corner, aimed almost along
+// the wall's own face (rather than square at it) so it grazes down the
+// wall's length instead of pooling in one circular spot — the real-life
+// "corner uplighter washing a wall in color" trick. Like the sofa's
+// gallery spotlight, Shreyas explicitly wants these to visibly spread (a
+// deliberate exception to the "no visible light shape" rule everywhere
+// else in this file). Two instances of this, below, both low on the
+// floor at the 16.5ft wall's two corners, each tucked behind the Plant
+// Pot that's already published right there (one at (0,0), one at (15,0))
+// so the fixture itself stays mostly hidden — a symmetric pair aimed at
+// each other's end of the wall so the washes overlap across nearly the
+// whole thing. It's the TARGET that's near the far corner (not just past
+// the middle, per Shreyas's "spread more, ~90% not ~30%" correction) that
+// gets the visible reach that far along the wall — intensity stays the
+// same, he confirmed that part was already right. Both positions/targets
+// are fixed to the wall's actual architecture, not read from any
+// furniture instance — these are lighting fixtures, not furniture, so
+// they stay put even if a Plant Pot near them later gets moved on the
+// Design page.
+//
+// decay=0, not the AimedSpotLight default of 2: extending the target
+// alone didn't fix Shreyas's "it's bright behind the pot and just dies by
+// 15 inches" report, because that die-off is inverse-square falloff
+// (decay=2), not the cone's reach — three.js's spotlight formula divides
+// intensity by distance², so it's already down to ~1/25th of its
+// close-up value by 5ft out regardless of where the target is. decay=0
+// removes that per-distance falloff entirely, leaving intensity constant
+// out to the `distance` cutoff (where three.js still applies a smooth
+// quartic taper down to zero, so it doesn't end in a hard visible edge).
+//
+// angle=0.6 narrows the cone somewhat, but that's not what was flooding
+// the two perpendicular side walls (15.3ft and 36.5ft) — the real cause:
+// each corner's target point sits only ~1.5ft short of the wall at the
+// OTHER end of this run (target x=15, that wall's plane at x=16.5), so
+// the beam's core axis points almost straight at it. With distance=26,
+// three.js's decay=0 falloff hadn't meaningfully tapered by the time the
+// beam reached that far (~16.4ft from the fixture), so it lit the
+// perpendicular wall at close to full strength — not spillover from a
+// wide cone, just the direct beam overshooting its intended wall.
+// distance=18 fixes it by ending the taper before the beam gets there:
+// still ~85% strength at 9ft out, ~60% by 12ft (this wall's own wash
+// stays exactly as good), but down to roughly ~9% by the time it reaches
+// the neighboring wall at ~16.4ft — a little residual color there, per
+// Shreyas's "20-30% of what's there now, other than that it's perfect."
+function CornerAccentLight({
+  position,
+  target,
+  color,
+}: {
+  position: [number, number, number];
+  target: [number, number, number];
+  color: string;
+}) {
+  return (
+    <>
+      <mesh position={position}>
+        <sphereGeometry args={[0.15, 12, 12]} />
+        <meshBasicMaterial color={color} toneMapped={false} />
+      </mesh>
+      <AimedSpotLight position={position} target={target} angle={0.6} penumbra={1} distance={18} intensity={130} color={color} decay={0} />
+    </>
+  );
+}
+
+// Detects the camera walking within `radius` ft of `position` (XZ-plane
+// distance only — height doesn't matter for "standing near the switch").
+// Only fires `onNearChange` on an actual enter/exit transition, not every
+// frame, so it's cheap to wire up a React state setter to it.
+function LightSwitchZone({ position, radius, onNearChange }: { position: [number, number]; radius: number; onNearChange: (near: boolean) => void }) {
+  const { camera } = useThree();
+  const wasNear = useRef(false);
+  useFrame(() => {
+    const dx = camera.position.x - position[0];
+    const dz = camera.position.z - position[1];
+    const near = dx * dx + dz * dz < radius * radius;
+    if (near !== wasNear.current) {
+      wasNear.current = near;
+      onNearChange(near);
+    }
+  });
+  return null;
+}
+
+// The physical switch plate on the wall — purely decorative (a box, not a
+// plane, so it doesn't have the facing-direction problem the portrait
+// above had), always rendered so it's visible before the player is close
+// enough to trigger the zone.
+function LightSwitchPlate({ position }: { position: [number, number, number] }) {
+  return (
+    <group position={position}>
+      <mesh castShadow>
+        <boxGeometry args={[0.35, 0.55, 0.06]} />
+        <meshStandardMaterial color="#e8e8ea" roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0, 0.045]}>
+        <boxGeometry args={[0.12, 0.22, 0.03]} />
+        <meshStandardMaterial color="#2b2b2e" roughness={0.4} metalness={0.2} />
+      </mesh>
+    </group>
+  );
+}
+
+export function WalkthroughScene({
+  lightMode,
+  lightIntensity,
+  onNearSwitchChange,
+}: {
+  lightMode: "warm" | "white";
+  lightIntensity: number;
+  onNearSwitchChange: (near: boolean) => void;
+}) {
   const locked = useRef(false);
   const { items } = useFurnitureLayout();
   const poolTables = items.filter((i) => i.renderType === "pool");
@@ -1166,28 +1452,72 @@ export function WalkthroughScene() {
   // since the two have drifted apart (the counter's been resized/moved
   // since that default was written).
   const counterForLogo = counters[0];
+  const counterCenterX = counterForLogo ? counterForLogo.x + footprint(counterForLogo).w / 2 : undefined;
   const counterCenterZ = counterForLogo ? counterForLogo.y + footprint(counterForLogo).h / 2 : undefined;
+  // The switch mounts on the same glass wall as the sign, offset to the
+  // side of it (the sign is at counterCenterZ, 7ft up — this sits lower
+  // and further along the wall so the two don't overlap) so its world
+  // position stays stable even if the counter itself gets dragged around
+  // on the Design page.
+  const switchWallX = GLASS_WALL.from[0] - 0.2;
+  const switchZ = counterCenterZ !== undefined ? counterCenterZ - 2.6 : undefined;
+  const switchPos: [number, number] | undefined = switchZ !== undefined ? [switchWallX, switchZ] : undefined;
 
   return (
     <>
       <SceneSetup />
       <color attach="background" args={["#c9d3d6"]} />
-      {/* No general room lighting — Shreyas's call: every light in the
-          room is off except the TV/screen glow (added at each screen) and
-          the dedicated pool table lights (added at each table). This
-          ambient is uniform with no position/falloff, so it can't produce
-          a hotspot or beam — warm-tinted to match the LED strips
-          (COUNTER_LED_COLOR) instead of plain white, kept low so wall/
-          floor texture reads as visible while the room still stays dark
-          overall. */}
-      <ambientLight intensity={0.5} color={COUNTER_LED_COLOR} />
+      {/* No general room lighting by default — Shreyas's call: every
+          light in the room is off except the TV/screen glow (added at
+          each screen) and the dedicated pool table lights (added at each
+          table). This ambient is uniform with no position/falloff, so it
+          can't produce a hotspot or beam. Now switchable in-scene via the
+          counter's light switch: "warm" keeps the LED-strip tint
+          (COUNTER_LED_COLOR), "white" goes plain white; intensity is
+          player-controlled too. */}
+      <ambientLight intensity={lightIntensity} color={lightMode === "warm" ? COUNTER_LED_COLOR : "#ffffff"} />
       <Floor />
       <Walls />
       <Ceiling />
       <CeilingLights />
       <Beams3D />
       <EntranceThreshold />
+      <Wall16Poster />
+      <WallPoster texturePath="/textures/big-wall-poster-2.png" widthFt={POSTER2_WIDTH_FT} centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
+      <WallPoster texturePath="/textures/big-wall-poster-1.png" widthFt={POSTER1_WIDTH_FT} centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
+      <WallPosterSpotlight centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
+      <WallPosterSpotlight centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
+      {/* Two accent lights on the 16.5ft wall's own two corners, both low
+          on the floor — Shreyas corrected the second one from up near
+          the ceiling down to floor level, behind the second Plant Pot
+          (published at x=15,y=0, right at this wall's other corner) —
+          same treatment as the first light behind the Plant Pot at
+          (0,0). Each one's target reaches almost the far end of the
+          wall (not just past the middle) so the two washes overlap
+          across nearly the whole 16.5ft run, per his "spread more, ~90%
+          not ~30%" correction. */}
+      <CornerAccentLight position={[0.4, 0.7, 0.4]} target={[15, 4, 0.2]} color="#F17424" />
+      <CornerAccentLight position={[16.1, 0.7, 0.4]} target={[1.5, 4, 0.2]} color="#915EB7" />
+      {/* Same fixture, same corner, aimed the other way — the Plant Pot at
+          (0,0) sits at the elbow of both the 16.5ft wall and this 36.5ft
+          one, and Shreyas wants the same warm wash grazing along THIS
+          wall too, toward the big wall posters (this ends up washing
+          poster two/Batman, since it's the nearer of the two). */}
+      <CornerAccentLight position={[0.4, 0.7, 0.4]} target={[0.2, 4, 15]} color="#F17424" />
+      {/* Poster one/Spider-Man is past both posters, closer to Plant Pot 5
+          (published at x=0,y=27.5) than to the corner one — same wash
+          technique, tucked by that pot instead, aimed back the other way
+          (toward -Z) so it reaches poster one. Shreyas asked for this one
+          in the purple already established at the 16.5ft wall's far
+          corner, not a new color. */}
+      <CornerAccentLight position={[0.4, 0.7, 27.9]} target={[0.2, 4, POSTER1_CENTER_Z]} color="#915EB7" />
       {counterCenterZ !== undefined && <Gorilla8Logo counterCenterZ={counterCenterZ} />}
+      {switchPos && counterCenterX !== undefined && (
+        <>
+          <LightSwitchPlate position={[switchWallX + 0.03, 3.6, switchZ!]} />
+          <LightSwitchZone position={switchPos} radius={6} onNearChange={onNearSwitchChange} />
+        </>
+      )}
 
       {poolTables.map((t, i) => (
         <RotatedFootprint key={t.id} item={t}>

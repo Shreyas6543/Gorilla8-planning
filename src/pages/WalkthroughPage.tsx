@@ -1,5 +1,5 @@
 import { Suspense, useEffect, useState } from "react";
-import { Box, Button, Typography } from "@mui/material";
+import { Box, Button, Typography, Dialog, DialogTitle, DialogContent, DialogActions, RadioGroup, FormControlLabel, Radio, Slider } from "@mui/material";
 import { Canvas } from "@react-three/fiber";
 import { Link as RouterLink } from "react-router-dom";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
@@ -7,6 +7,10 @@ import { WalkthroughScene } from "../components/walkthrough/WalkthroughScene";
 
 export function WalkthroughPage() {
   const [locked, setLocked] = useState(false);
+  const [nearSwitch, setNearSwitch] = useState(false);
+  const [switchOpen, setSwitchOpen] = useState(false);
+  const [lightMode, setLightMode] = useState<"warm" | "white">("warm");
+  const [lightIntensity, setLightIntensity] = useState(0.5);
 
   useEffect(() => {
     const onChange = () => setLocked(Boolean(document.pointerLockElement));
@@ -14,11 +18,35 @@ export function WalkthroughPage() {
     return () => document.removeEventListener("pointerlockchange", onChange);
   }, []);
 
+  // "E" opens the light switch panel, but only while actually standing
+  // near it — same convention as WASD movement (code-based, not key
+  // value, so it still works regardless of keyboard layout). Opening it
+  // releases the pointer lock so the mouse is free to use the dialog's
+  // controls, same as clicking "Back to floor plan" would.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "KeyE" && locked && nearSwitch && !switchOpen) {
+        setSwitchOpen(true);
+        document.exitPointerLock();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [locked, nearSwitch, switchOpen]);
+
   return (
     <Box sx={{ width: "100vw", height: "100vh", position: "relative", bgcolor: "#0B0D10", overflow: "hidden" }}>
-      <Canvas shadows camera={{ fov: 75, near: 0.1, far: 200 }}>
+      {/* fov 40 (was 75, then 55 — both still too wide). Perspective only
+          looks life-sized when the camera's vertical FOV roughly matches
+          the angle the monitor actually subtends at the viewer's eye —
+          sitting ~2ft from a ~14in-tall screen that's only ~33°. Anything
+          wider crams more room into the same pixels, which is what made
+          the portrait, the pool tables and the gaps between them all read
+          smaller than they measure. 40 stays close to that geometric
+          ideal while keeping enough peripheral view to walk around with. */}
+      <Canvas shadows camera={{ fov: 40, near: 0.1, far: 200 }}>
         <Suspense fallback={null}>
-          <WalkthroughScene />
+          <WalkthroughScene lightMode={lightMode} lightIntensity={lightIntensity} onNearSwitchChange={setNearSwitch} />
         </Suspense>
       </Canvas>
 
@@ -77,6 +105,44 @@ export function WalkthroughPage() {
           WASD to move · mouse to look · Esc to release
         </Box>
       )}
+
+      {locked && nearSwitch && !switchOpen && (
+        <Box
+          sx={{
+            position: "absolute",
+            bottom: 56,
+            left: "50%",
+            transform: "translateX(-50%)",
+            bgcolor: "rgba(0,0,0,0.6)",
+            color: "#fff",
+            px: 2,
+            py: 0.75,
+            borderRadius: 2,
+            fontSize: 13,
+            fontWeight: 700,
+            pointerEvents: "none",
+          }}
+        >
+          Press E for the light switch
+        </Box>
+      )}
+
+      <Dialog open={switchOpen} onClose={() => setSwitchOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Light switch</DialogTitle>
+        <DialogContent>
+          <RadioGroup value={lightMode} onChange={(e) => setLightMode(e.target.value as "warm" | "white")}>
+            <FormControlLabel value="warm" control={<Radio />} label="Warm strip lighting" />
+            <FormControlLabel value="white" control={<Radio />} label="White lighting" />
+          </RadioGroup>
+          <Typography sx={{ mt: 2, mb: 1 }} variant="body2" color="text.secondary">
+            Intensity
+          </Typography>
+          <Slider value={lightIntensity} onChange={(_, v) => setLightIntensity(v as number)} min={0} max={2} step={0.05} valueLabelDisplay="auto" />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSwitchOpen(false)}>Done</Button>
+        </DialogActions>
+      </Dialog>
 
       <Box
         sx={{
