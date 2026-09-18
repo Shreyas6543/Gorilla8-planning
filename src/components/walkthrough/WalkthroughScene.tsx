@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { useThree, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { PointerLockControls, useGLTF, useTexture, Text } from "@react-three/drei";
@@ -1432,10 +1432,14 @@ export function WalkthroughScene({
   lightMode,
   lightIntensity,
   onNearSwitchChange,
+  touchMoveInput,
+  touchLookDelta,
 }: {
   lightMode: "warm" | "white";
   lightIntensity: number;
   onNearSwitchChange: (near: boolean) => void;
+  touchMoveInput?: RefObject<{ x: number; y: number }>;
+  touchLookDelta?: RefObject<{ dx: number; dy: number }>;
 }) {
   const locked = useRef(false);
   const { items } = useFurnitureLayout();
@@ -1564,7 +1568,7 @@ export function WalkthroughScene({
         </RotatedFootprint>
       ))}
 
-      <FirstPersonController eyeHeight={EYE_HEIGHT_FT} speed={WALK_SPEED_FT_PER_SEC} />
+      <FirstPersonController eyeHeight={EYE_HEIGHT_FT} speed={WALK_SPEED_FT_PER_SEC} touchMoveInput={touchMoveInput} touchLookDelta={touchLookDelta} />
       <PointerLockControls
         onLock={() => (locked.current = true)}
         onUnlock={() => (locked.current = false)}
