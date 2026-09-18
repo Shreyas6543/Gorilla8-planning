@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { PointerLockControls, useGLTF, Text } from "@react-three/drei";
+import { PointerLockControls, useGLTF, useTexture, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { buildWalls, isInsideRoom, EYE_HEIGHT_FT, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
-import { OUTER_POLYGON, BEAMS, ENTRANCE } from "../../config/floorplan";
+import { OUTER_POLYGON, BEAMS, ENTRANCE, GLASS_WALL } from "../../config/floorplan";
 import { footprint, type FurnitureItem } from "../../config/layout";
 import { BUILTIN_CATALOG } from "../../lib/furnitureCatalog";
 import { FirstPersonController } from "./FirstPersonController";
@@ -271,7 +271,10 @@ function PoolTableLight({ height, surfaceY }: { height: number; surfaceY: number
         <planeGeometry args={[0.48, shadeLen - 0.1]} />
         <meshBasicMaterial color="#FFDDAA" toneMapped={false} />
       </mesh>
-      {[-shadeLen / 4, shadeLen / 4].map((dz) => (
+      {/* Only one of the two lights casts a shadow — point-light shadows
+          are expensive (a 6-face cubemap render each), and 2 per table
+          across every table adds up fast. */}
+      {[-shadeLen / 4, shadeLen / 4].map((dz, i) => (
         <pointLight
           key={dz}
           position={[0, shadeY - 0.3, dz]}
@@ -279,7 +282,7 @@ function PoolTableLight({ height, surfaceY }: { height: number; surfaceY: number
           distance={height + 5}
           decay={2}
           color="#FFD9A0"
-          castShadow
+          castShadow={i === 0}
         />
       ))}
     </group>
@@ -760,11 +763,13 @@ function RacingSim({
 
 // Dark reeded-wood reception counter, matching the reference photo Shreyas
 // sent: near-black wood body, tightly-spaced vertical fluted ridges, and
-// warm LED strip lighting washing over the ridges from a slot right under
-// the countertop overhang and another right at the floor. Every general
-// room light is off in this interior, so these strips are the counter's
-// own dedicated light source, not ambient fill — same approach as the TV
-// glow and pool table lights elsewhere in this scene.
+// a warm glowing LED strip under the countertop overhang and another at
+// the floor. Unlike the TV glow / pool table lights elsewhere in this
+// scene, these strips carry NO dynamic light — purely emissive geometry.
+// Per Shreyas's reference photos, a real LED strip barely lights its
+// surroundings at all; every attempt to actually cast light from them
+// (point light, area light) rendered as a visible bulb or beam on nearby
+// surfaces. Don't re-add a light here without checking with him first.
 const COUNTER_BODY_COLOR = "#171310";
 const COUNTER_TOP_COLOR = "#0F0C0A";
 const COUNTER_LED_COLOR = "#FFC98A";
@@ -813,7 +818,7 @@ function Counter({ x, y, width, height, elevation }: { x: number; y: number; wid
           const pos: [number, number, number] =
             face.axis === "z" ? [along, ridgeY, face.pos] : [face.pos, ridgeY, along];
           return (
-            <mesh key={`ridge-${face.axis}-${face.pos}-${i}`} position={pos} castShadow>
+            <mesh key={`ridge-${face.axis}-${face.pos}-${i}`} position={pos}>
               <cylinderGeometry args={[0.045, 0.045, ridgeHeight, 8]} />
               <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.4} metalness={0.05} />
             </mesh>
@@ -828,24 +833,23 @@ function Counter({ x, y, width, height, elevation }: { x: number; y: number; wid
       </mesh>
 
       {/* Warm LED strips — one under the overhang lip, one at the floor,
-          on every face — plus a real light at each so the glow actually
-          washes over the ridges and spills onto the carpet, not just a
-          bright decal. */}
+          on every face. Purely emissive, no dynamic light attached at
+          all — every version that added a real light source (point or
+          area) rendered as a visible bulb/beam on nearby surfaces, which
+          is exactly what Shreyas ruled out with reference photos. A real
+          LED strip's glow, in a photo, is a camera bloom artifact around
+          the LEDs themselves, not the strip actually casting light onto
+          the room — so `Bloom` in the post-processing pipeline below is
+          what should sell the glow, not a simulated light source. */}
       {faces.map((face) => {
         const faceOut = face.pos + face.outward * 0.03;
-        const lenArg = face.span;
         const stripSize: [number, number, number] =
-          face.axis === "z" ? [lenArg, 0.04, 0.05] : [0.05, 0.04, lenArg];
-        const stripCenter: [number, number] = [face.spanStart + face.span / 2, faceOut];
+          face.axis === "z" ? [face.span, 0.04, 0.05] : [0.05, 0.04, face.span];
+        const stripAlong = face.spanStart + face.span / 2;
         const topStripPos: [number, number, number] =
-          face.axis === "z" ? [stripCenter[0], elevation - 0.03, stripCenter[1]] : [stripCenter[1], elevation - 0.03, stripCenter[0]];
+          face.axis === "z" ? [stripAlong, elevation - 0.03, faceOut] : [faceOut, elevation - 0.03, stripAlong];
         const bottomStripPos: [number, number, number] =
-          face.axis === "z" ? [stripCenter[0], 0.06, stripCenter[1]] : [stripCenter[1], 0.06, stripCenter[0]];
-        const lightBase = face.pos + face.outward * 0.3;
-        const topLightPos: [number, number, number] =
-          face.axis === "z" ? [stripCenter[0], elevation - 0.15, lightBase] : [lightBase, elevation - 0.15, stripCenter[0]];
-        const bottomLightPos: [number, number, number] =
-          face.axis === "z" ? [stripCenter[0], 0.15, lightBase] : [lightBase, 0.15, stripCenter[0]];
+          face.axis === "z" ? [stripAlong, 0.06, faceOut] : [faceOut, 0.06, stripAlong];
         return (
           <group key={`led-${face.axis}-${face.pos}`}>
             <mesh position={topStripPos}>
@@ -856,8 +860,6 @@ function Counter({ x, y, width, height, elevation }: { x: number; y: number; wid
               <boxGeometry args={stripSize} />
               <meshBasicMaterial color={COUNTER_LED_COLOR} toneMapped={false} />
             </mesh>
-            <pointLight position={topLightPos} intensity={14} distance={face.span + 2} decay={2} color={COUNTER_LED_COLOR} />
-            <pointLight position={bottomLightPos} intensity={14} distance={face.span + 2} decay={2} color={COUNTER_LED_COLOR} />
           </group>
         );
       })}
@@ -936,6 +938,38 @@ function GenericObject({
   );
 }
 
+// GORILLA 8 neon sign, mounted on the glass wall directly behind the
+// counter (the counter's back edge sits right up against it — only 0.2ft
+// gap) at Shreyas's specced height and size. The source image is already
+// a photo of a lit neon sign — black backing, glowing gold linework — so
+// it's used as-is for both the color and the glow: `meshBasicMaterial`
+// with `toneMapped={false}` renders it at its own brightness regardless
+// of scene lighting, so the neon lines read as lit and the near-black
+// backing stays dark, with zero actual light cast into the room (same
+// lesson learned from the counter's LED strips — a real light source
+// here would show up as a visible glow/beam on the glass and floor;
+// Bloom in the post-processing pipeline is what should sell the neon
+// look instead).
+const LOGO_SIZE_FT = 3;
+const LOGO_HEIGHT_FT = 7; // vertical center of the sign
+function Gorilla8Logo({ counterCenterZ }: { counterCenterZ: number }) {
+  const texture = useTexture("/textures/gorilla8-logo.png");
+  useMemo(() => {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }, [texture]);
+  // Glass wall is a real 0.3ft-thick box centered ON GLASS_WALL.from[0], so
+  // its inner (room-side) face sits 0.15ft in front of that line — the
+  // sign needs to clear that face, not just offset from the centerline,
+  // or it renders embedded inside the glass and gets occluded by it.
+  const wallX = GLASS_WALL.from[0] - 0.2;
+  return (
+    <mesh position={[wallX, LOGO_HEIGHT_FT, counterCenterZ]} rotation={[0, -Math.PI / 2, 0]}>
+      <planeGeometry args={[LOGO_SIZE_FT, LOGO_SIZE_FT]} />
+      <meshBasicMaterial map={texture} toneMapped={false} transparent />
+    </mesh>
+  );
+}
+
 function EntranceThreshold() {
   const cx = (ENTRANCE.from[0] + ENTRANCE.to[0]) / 2;
   const width = Math.abs(ENTRANCE.to[0] - ENTRANCE.from[0]);
@@ -956,6 +990,12 @@ export function WalkthroughScene() {
   const counters = items.filter((i) => i.renderType === "counter");
   const cabinets = items.filter((i) => i.renderType === "cabinet");
   const generics = items.filter((i) => i.renderType === "generic");
+  // Logo mounts behind whichever item is actually the counter right now —
+  // reads its live position (Design page), not the hardcoded default,
+  // since the two have drifted apart (the counter's been resized/moved
+  // since that default was written).
+  const counterForLogo = counters[0];
+  const counterCenterZ = counterForLogo ? counterForLogo.y + footprint(counterForLogo).h / 2 : undefined;
 
   return (
     <>
@@ -973,6 +1013,7 @@ export function WalkthroughScene() {
       <CeilingLights />
       <Beams3D />
       <EntranceThreshold />
+      {counterCenterZ !== undefined && <Gorilla8Logo counterCenterZ={counterCenterZ} />}
 
       {poolTables.map((t, i) => (
         <RotatedFootprint key={t.id} item={t}>
