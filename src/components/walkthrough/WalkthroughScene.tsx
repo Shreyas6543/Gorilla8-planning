@@ -592,6 +592,7 @@ function PCTower({ x, z }: { x: number; z: number }) {
         <boxGeometry args={[0.02, 1.6, 1.2]} />
         <meshPhysicalMaterial color="#101820" transparent opacity={0.35} roughness={0.1} />
       </mesh>
+
       {[0.5, 1.0, 1.5].map((fy, i) => (
         <mesh key={fy} position={[0.37, fy, 0]} rotation={[0, Math.PI / 2, 0]}>
           <torusGeometry args={[0.22, 0.05, 8, 16]} />
