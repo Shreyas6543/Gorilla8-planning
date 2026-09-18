@@ -820,7 +820,9 @@ function Counter({ x, y, width, height, elevation }: { x: number; y: number; wid
           return (
             <mesh key={`ridge-${face.axis}-${face.pos}-${i}`} position={pos}>
               <cylinderGeometry args={[0.045, 0.045, ridgeHeight, 8]} />
-              <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.4} metalness={0.05} />
+              {/* Small baked-in emissive tint (not a light) so the ridges
+                  read as visible instead of pitch black. */}
+              <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.4} metalness={0.05} emissive={COUNTER_LED_COLOR} emissiveIntensity={0.12} />
             </mesh>
           );
         });
@@ -945,11 +947,9 @@ function GenericObject({
 // it's used as-is for both the color and the glow: `meshBasicMaterial`
 // with `toneMapped={false}` renders it at its own brightness regardless
 // of scene lighting, so the neon lines read as lit and the near-black
-// backing stays dark, with zero actual light cast into the room (same
-// lesson learned from the counter's LED strips — a real light source
-// here would show up as a visible glow/beam on the glass and floor;
-// Bloom in the post-processing pipeline is what should sell the neon
-// look instead).
+// backing stays dark. Just the sign, no backing panel — a flat emissive
+// panel behind it (tried once) read as a distinct rectangular plaque
+// shape on the wall, not a subtle glow; Shreyas had it removed.
 const LOGO_SIZE_FT = 3;
 const LOGO_HEIGHT_FT = 7; // vertical center of the sign
 function Gorilla8Logo({ counterCenterZ }: { counterCenterZ: number }) {
@@ -1003,10 +1003,13 @@ export function WalkthroughScene() {
       <color attach="background" args={["#c9d3d6"]} />
       {/* No general room lighting — Shreyas's call: every light in the
           room is off except the TV/screen glow (added at each screen) and
-          the dedicated pool table lights (added at each table). This tiny
-          ambient is not a room light, just enough that unlit surfaces read
-          as very-dark-grey instead of computed pure black. */}
-      <ambientLight intensity={0.035} />
+          the dedicated pool table lights (added at each table). This
+          ambient is uniform with no position/falloff, so it can't produce
+          a hotspot or beam — warm-tinted to match the LED strips
+          (COUNTER_LED_COLOR) instead of plain white, kept low so wall/
+          floor texture reads as visible while the room still stays dark
+          overall. */}
+      <ambientLight intensity={0.5} color={COUNTER_LED_COLOR} />
       <Floor />
       <Walls />
       <Ceiling />
