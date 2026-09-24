@@ -6,10 +6,9 @@ import { calcScenario } from "../lib/calculations";
 
 interface SinglePropertyChartProps {
   hoursPerDay: number;
-  racingSim: number;
 }
 
-export function SinglePropertyChart({ hoursPerDay, racingSim }: SinglePropertyChartProps) {
+export function SinglePropertyChart({ hoursPerDay }: SinglePropertyChartProps) {
   const hours: number[] = [...HOUR_OPTIONS];
   const property = PROPERTIES.small;
 
@@ -19,7 +18,7 @@ export function SinglePropertyChart({ hoursPerDay, racingSim }: SinglePropertyCh
         pool: property.minPool,
         ps5: property.minPs5,
         carrom: property.minCarrom,
-        racingSim,
+        racingSim: 0,
         hoursPerDay: h,
       }).totalRevenue
   );
@@ -29,7 +28,7 @@ export function SinglePropertyChart({ hoursPerDay, racingSim }: SinglePropertyCh
         pool: property.minPool,
         ps5: property.minPs5,
         carrom: property.minCarrom,
-        racingSim,
+        racingSim: 0,
         hoursPerDay: h,
       }).operatingSurplus
   );
@@ -40,7 +39,7 @@ export function SinglePropertyChart({ hoursPerDay, racingSim }: SinglePropertyCh
         Revenue &amp; profit vs. utilization — 1,350 sq ft
       </Typography>
       <Typography variant="body2" sx={{ color: "text.secondary", mb: 1 }}>
-        How your numbers change as paid hours/day goes up. {racingSim > 0 ? "Racing simulator included." : "Racing simulator off."}
+        How your numbers change as paid hours/day goes up.
       </Typography>
       <Box sx={{ width: "100%", height: 320 }}>
         <LineChart

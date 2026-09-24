@@ -1,10 +1,21 @@
-import { Box, Paper, Stack, Typography } from "@mui/material";
-import { PROPERTIES, totalCapitalPool } from "../config/properties";
+import { Box, Stack, Typography } from "@mui/material";
+import { PROPERTIES } from "../config/properties";
 import { formatINR } from "../lib/calculations";
 
-export function CapitalBar({ property }: { property: (typeof PROPERTIES)[keyof typeof PROPERTIES] }) {
-  const total = totalCapitalPool(property);
-  const investedPct = (property.setupInvestment / total) * 100;
+// invested/remaining are live figures (see useCapitalStatus) — never derived
+// from property.setupInvestment/remainingCapital here, so this bar always
+// reflects actual Expenses-page spend rather than a fixed planning number.
+export function CapitalBar({
+  property,
+  invested,
+  remaining,
+}: {
+  property: (typeof PROPERTIES)[keyof typeof PROPERTIES];
+  invested: number;
+  remaining: number;
+}) {
+  const total = invested + remaining;
+  const investedPct = total > 0 ? (invested / total) * 100 : 0;
   const remainingPct = 100 - investedPct;
 
   return (
@@ -39,7 +50,7 @@ export function CapitalBar({ property }: { property: (typeof PROPERTIES)[keyof t
           }}
         >
           <Typography variant="caption" sx={{ fontWeight: 800, color: "#04140a", px: 0.5, whiteSpace: "nowrap" }}>
-            {formatINR(property.setupInvestment, { compact: true })} invested
+            {formatINR(invested, { compact: true })} invested
           </Typography>
         </Box>
         <Box
@@ -54,31 +65,10 @@ export function CapitalBar({ property }: { property: (typeof PROPERTIES)[keyof t
           }}
         >
           <Typography variant="caption" sx={{ fontWeight: 700, color: "text.secondary", px: 0.5, whiteSpace: "nowrap" }}>
-            {formatINR(property.remainingCapital, { compact: true })} remaining
+            {formatINR(remaining, { compact: true })} remaining
           </Typography>
         </Box>
       </Box>
     </Box>
-  );
-}
-
-export function CapitalAllocation() {
-  return (
-    <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 4 }}>
-      <Typography variant="h6" sx={{ fontWeight: 800 }}>
-        Capital deployment
-      </Typography>
-      <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-        Each option is evaluated against the same ₹30L pool of available capital — invested vs. kept in reserve.
-      </Typography>
-      <CapitalBar property={PROPERTIES.small} />
-      <CapitalBar property={PROPERTIES.large} />
-      <Typography variant="caption" sx={{ color: "text.secondary" }}>
-        The 2,000 sq ft option ties up {formatINR(PROPERTIES.large.setupInvestment, { compact: true })} of capital,
-        leaving only {formatINR(PROPERTIES.large.remainingCapital, { compact: true })} in reserve — noticeably less
-        of a buffer than the {formatINR(PROPERTIES.small.remainingCapital, { compact: true })} left over with 1,350
-        sq ft.
-      </Typography>
-    </Paper>
   );
 }

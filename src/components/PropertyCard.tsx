@@ -10,7 +10,8 @@ interface PropertyCardProps {
   pool: number;
   ps5: number;
   carrom: number;
-  racingSim: number;
+  invested: number;
+  remaining: number;
   featured?: boolean;
   dimmed?: boolean;
   showBreakdown?: boolean;
@@ -22,7 +23,8 @@ export function PropertyCard({
   pool,
   ps5,
   carrom,
-  racingSim,
+  invested,
+  remaining,
   featured,
   dimmed,
   showBreakdown,
@@ -71,17 +73,17 @@ export function PropertyCard({
         </Grid>
         <Grid size={6}>
           <MetricCard
-            label="Initial investment"
-            value={formatINR(property.setupInvestment, { compact: true })}
-            sublabel="setup capital"
+            label="Invested so far"
+            value={formatINR(invested, { compact: true })}
+            sublabel="from Expenses page"
             size="sm"
           />
         </Grid>
         <Grid size={6}>
           <MetricCard
             label="Remaining capital"
-            value={formatINR(property.remainingCapital, { compact: true })}
-            sublabel="kept in reserve"
+            value={formatINR(remaining, { compact: true })}
+            sublabel="of the ₹20L pool"
             size="sm"
           />
         </Grid>
@@ -104,17 +106,11 @@ export function PropertyCard({
           size="small"
           variant="outlined"
         />
-        <Chip
-          label={`🏎️ Racing sim ${capacityLabel(property.minRacingSim, property.maxRacingSim)}`}
-          size="small"
-          variant="outlined"
-        />
       </Stack>
 
       <Typography variant="caption" sx={{ color: "text.secondary" }}>
         Current scenario: {pool} pool table{pool !== 1 ? "s" : ""} · {ps5} PS5 station{ps5 !== 1 ? "s" : ""}
         {carrom > 0 ? ` · ${carrom} carrom board (₹100/hr)` : ""}
-        {racingSim > 0 ? ` · ${racingSim} racing sim rig (₹350/hr)` : ""}
       </Typography>
 
       {showBreakdown && (
@@ -130,17 +126,6 @@ export function PropertyCard({
               <MetricCard
                 label="Carrom revenue"
                 value={formatINR(result.carromRevenue, { compact: true })}
-                size="sm"
-              />
-            </Grid>
-          )}
-          {racingSim > 0 && (
-            <Grid size={{ xs: 6, sm: 3 }}>
-              <MetricCard
-                label="Racing sim revenue"
-                value={formatINR(result.racingSimRevenue, { compact: true })}
-                sublabel="new idea"
-                accent={property.accent}
                 size="sm"
               />
             </Grid>

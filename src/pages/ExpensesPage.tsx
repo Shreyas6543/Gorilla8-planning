@@ -21,7 +21,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import AddIcon from "@mui/icons-material/Add";
-import { PROPERTIES } from "../config/properties";
+import { PROPERTIES, totalCapitalPool } from "../config/properties";
 import {
   getRow,
   loadExpenseState,
@@ -30,7 +30,6 @@ import {
   rowFinalTotal,
   rowIsOrdered,
   type ExpenseState,
-  type PropertyKey,
 } from "../lib/expenses";
 import {
   loadExpenseCatalog,
@@ -316,22 +315,20 @@ export function ExpensesPage() {
   };
 
   const totals = useMemo(() => {
-    const perProperty: Record<PropertyKey, { expected: number; final: number; ordered: number }> = {
-      small: { expected: 0, final: 0, ordered: 0 },
-      large: { expected: 0, final: 0, ordered: 0 },
-    };
+    let expected = 0;
+    let final = 0;
+    let ordered = 0;
     for (const item of items) {
       const row = getRow(state, item.id);
-      (["small", "large"] as PropertyKey[]).forEach((p) => {
-        perProperty[p].expected += rowExpectedTotal(row, p);
-        perProperty[p].final += rowFinalTotal(row, p);
-        if (rowIsOrdered(row, p)) perProperty[p].ordered += 1;
-      });
+      expected += rowExpectedTotal(row, "small");
+      final += rowFinalTotal(row, "small");
+      if (rowIsOrdered(row, "small")) ordered += 1;
     }
-    return perProperty;
+    return { expected, final, ordered };
   }, [state, items]);
 
-  const expectedDelta = totals.large.expected - totals.small.expected;
+  const totalCapital = totalCapitalPool(PROPERTIES.small);
+  const remainingCapital = totalCapital - totals.final;
 
   return (
     <Box
@@ -344,7 +341,7 @@ export function ExpensesPage() {
       }}
     >
       <Container maxWidth="lg" sx={{ pt: { xs: 4, md: 6 } }}>
-        <PageHeader subtitle="Setup expenses checklist — expected vs. final (ordered) price, quantities, side by side for both properties. Saved automatically." />
+        <PageHeader subtitle="Setup expenses checklist — expected vs. final (ordered) price and quantities. Saved automatically." />
 
         <Stack spacing={3}>
           {isAdmin && (
@@ -354,49 +351,37 @@ export function ExpensesPage() {
           <Grid container spacing={2}>
             <Grid size={{ xs: 6, md: 3 }}>
               <MetricCard
-                label={`${PROPERTIES.small.shortLabel} — expected`}
-                value={formatINR(totals.small.expected, { compact: true })}
+                label="Expected"
+                value={formatINR(totals.expected, { compact: true })}
                 sublabel="total setup budget"
                 accent={PROPERTIES.small.accent}
               />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <MetricCard
-                label={`${PROPERTIES.small.shortLabel} — ordered so far`}
-                value={formatINR(totals.small.final, { compact: true })}
-                sublabel={`${totals.small.ordered} of ${items.length} items`}
+                label="Ordered so far"
+                value={formatINR(totals.final, { compact: true })}
+                sublabel={`${totals.ordered} of ${items.length} items`}
                 accent={PROPERTIES.small.accent}
               />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <MetricCard
-                label={`${PROPERTIES.large.shortLabel} — expected`}
-                value={formatINR(totals.large.expected, { compact: true })}
-                sublabel="total setup budget"
-                accent={PROPERTIES.large.accent}
+                label="Total capital"
+                value={formatINR(totalCapital, { compact: true })}
+                sublabel="available pool"
+                accent={PROPERTIES.small.accent}
               />
             </Grid>
             <Grid size={{ xs: 6, md: 3 }}>
               <MetricCard
-                label={`${PROPERTIES.large.shortLabel} — ordered so far`}
-                value={formatINR(totals.large.final, { compact: true })}
-                sublabel={`${totals.large.ordered} of ${items.length} items`}
-                accent={PROPERTIES.large.accent}
+                label="Remaining capital"
+                value={formatINR(remainingCapital, { compact: true })}
+                sublabel="after money spent so far"
+                accent={remainingCapital >= 0 ? PROPERTIES.small.accent : "#FF6B6B"}
               />
             </Grid>
           </Grid>
-
-          {(totals.small.expected > 0 || totals.large.expected > 0) && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 4 }}>
-              <Typography sx={{ color: "text.secondary" }}>
-                At current entries, {PROPERTIES.large.shortLabel} needs{" "}
-                <b style={{ color: expectedDelta >= 0 ? "#FF6B6B" : PROPERTIES.large.accent }}>
-                  {formatINR(Math.abs(expectedDelta), { compact: true })} {expectedDelta >= 0 ? "more" : "less"}
-                </b>{" "}
-                expected setup spend than {PROPERTIES.small.shortLabel}.
-              </Typography>
-            </Paper>
-          )}
 
           <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2.5 }, borderRadius: 4 }}>
             <Stack
@@ -463,43 +448,17 @@ export function ExpensesPage() {
                           <Paper key={item.id} elevation={0} sx={{ p: 1.5, borderRadius: 3, border: "1px solid rgba(255,255,255,0.08)" }}>
                             <Typography sx={{ fontWeight: 700, mb: 1 }}>{item.name}</Typography>
                             <Grid container spacing={1.5}>
-                              <Grid size={6}>
-                                <Typography variant="caption" sx={{ color: PROPERTIES.small.accent, fontWeight: 700 }}>
-                                  {PROPERTIES.small.shortLabel}
-                                </Typography>
-                                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Qty</Typography>
-                                    <EditableValue value={row.qtySmall} onChange={(v) => updateField(item.id, "qtySmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Expected/unit</Typography>
-                                    <EditableValue value={row.expSmall} onChange={(v) => updateField(item.id, "expSmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Final/unit</Typography>
-                                    <EditableValue value={row.finSmall} onChange={(v) => updateField(item.id, "finSmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
-                                  </Box>
-                                </Stack>
+                              <Grid size={4}>
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>Qty</Typography>
+                                <EditableValue value={row.qtySmall} onChange={(v) => updateField(item.id, "qtySmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
                               </Grid>
-                              <Grid size={6}>
-                                <Typography variant="caption" sx={{ color: PROPERTIES.large.accent, fontWeight: 700 }}>
-                                  {PROPERTIES.large.shortLabel}
-                                </Typography>
-                                <Stack spacing={0.5} sx={{ mt: 0.5 }}>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Qty</Typography>
-                                    <EditableValue value={row.qtyLarge} onChange={(v) => updateField(item.id, "qtyLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} fullWidth />
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Expected/unit</Typography>
-                                    <EditableValue value={row.expLarge} onChange={(v) => updateField(item.id, "expLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} fullWidth />
-                                  </Box>
-                                  <Box>
-                                    <Typography variant="caption" sx={{ color: "text.secondary" }}>Final/unit</Typography>
-                                    <EditableValue value={row.finLarge} onChange={(v) => updateField(item.id, "finLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} fullWidth />
-                                  </Box>
-                                </Stack>
+                              <Grid size={4}>
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>Expected/unit</Typography>
+                                <EditableValue value={row.expSmall} onChange={(v) => updateField(item.id, "expSmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
+                              </Grid>
+                              <Grid size={4}>
+                                <Typography variant="caption" sx={{ color: "text.secondary" }}>Final/unit</Typography>
+                                <EditableValue value={row.finSmall} onChange={(v) => updateField(item.id, "finSmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} fullWidth />
                               </Grid>
                             </Grid>
                           </Paper>
@@ -514,22 +473,10 @@ export function ExpensesPage() {
             {/* Desktop table layout (md+) */}
             <Box sx={{ display: { xs: "none", md: "block" }, mt: 2 }}>
               <TableContainer sx={{ overflowX: "auto", borderRadius: 2, border: "1px solid rgba(255,255,255,0.08)" }}>
-                <Table size="small" sx={{ minWidth: 920 }}>
+                <Table size="small" sx={{ minWidth: 520 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell sx={{ ...headCellSx, minWidth: 180 }}>Item</TableCell>
-                      <TableCell align="center" colSpan={3} sx={{ ...headCellSx, color: PROPERTIES.small.accent, borderLeft: "1px solid rgba(255,255,255,0.12)" }}>
-                        {PROPERTIES.small.shortLabel}
-                      </TableCell>
-                      <TableCell align="center" colSpan={3} sx={{ ...headCellSx, color: PROPERTIES.large.accent, borderLeft: "1px solid rgba(255,255,255,0.12)" }}>
-                        {PROPERTIES.large.shortLabel}
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell sx={headCellSx} />
-                      <TableCell align="right" sx={{ ...headCellSx, borderLeft: "1px solid rgba(255,255,255,0.12)" }}>Qty</TableCell>
-                      <TableCell align="right" sx={headCellSx}>Expected/unit</TableCell>
-                      <TableCell align="right" sx={headCellSx}>Final/unit</TableCell>
                       <TableCell align="right" sx={{ ...headCellSx, borderLeft: "1px solid rgba(255,255,255,0.12)" }}>Qty</TableCell>
                       <TableCell align="right" sx={headCellSx}>Expected/unit</TableCell>
                       <TableCell align="right" sx={headCellSx}>Final/unit</TableCell>
@@ -541,13 +488,11 @@ export function ExpensesPage() {
                       if (categoryItems.length === 0) return null;
                       const catExpSmall = categoryItems.reduce((s, i) => s + rowExpectedTotal(getRow(state, i.id), "small"), 0);
                       const catFinSmall = categoryItems.reduce((s, i) => s + rowFinalTotal(getRow(state, i.id), "small"), 0);
-                      const catExpLarge = categoryItems.reduce((s, i) => s + rowExpectedTotal(getRow(state, i.id), "large"), 0);
-                      const catFinLarge = categoryItems.reduce((s, i) => s + rowFinalTotal(getRow(state, i.id), "large"), 0);
                       return (
                         <Fragment key={category.id}>
                           <TableRow>
                             <TableCell
-                              colSpan={7}
+                              colSpan={4}
                               sx={{
                                 bgcolor: "rgba(255,255,255,0.04)",
                                 color: "text.primary",
@@ -576,15 +521,6 @@ export function ExpensesPage() {
                                 <TableCell align="right">
                                   <EditableValue value={row.finSmall} onChange={(v) => updateField(item.id, "finSmall", v)} unlocked={unlocked} accent={PROPERTIES.small.accent} />
                                 </TableCell>
-                                <TableCell align="right" sx={{ borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-                                  <EditableValue value={row.qtyLarge} onChange={(v) => updateField(item.id, "qtyLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} />
-                                </TableCell>
-                                <TableCell align="right">
-                                  <EditableValue value={row.expLarge} onChange={(v) => updateField(item.id, "expLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} />
-                                </TableCell>
-                                <TableCell align="right">
-                                  <EditableValue value={row.finLarge} onChange={(v) => updateField(item.id, "finLarge", v)} unlocked={unlocked} accent={PROPERTIES.large.accent} />
-                                </TableCell>
                               </TableRow>
                             );
                           })}
@@ -598,12 +534,6 @@ export function ExpensesPage() {
                             <TableCell align="right" sx={{ color: PROPERTIES.small.accent, fontWeight: 700 }}>
                               {catFinSmall > 0 ? `${formatINR(catFinSmall, { compact: true })} fin.` : "—"}
                             </TableCell>
-                            <TableCell colSpan={2} align="right" sx={{ borderLeft: "1px solid rgba(255,255,255,0.06)", color: PROPERTIES.large.accent, fontWeight: 700 }}>
-                              {formatINR(catExpLarge, { compact: true })} exp.
-                            </TableCell>
-                            <TableCell align="right" sx={{ color: PROPERTIES.large.accent, fontWeight: 700 }}>
-                              {catFinLarge > 0 ? `${formatINR(catFinLarge, { compact: true })} fin.` : "—"}
-                            </TableCell>
                           </TableRow>
                         </Fragment>
                       );
@@ -613,16 +543,10 @@ export function ExpensesPage() {
                         GRAND TOTAL
                       </TableCell>
                       <TableCell colSpan={2} align="right" sx={{ borderTop: "2px solid rgba(255,255,255,0.2)", borderLeft: "1px solid rgba(255,255,255,0.06)", color: PROPERTIES.small.accent, fontWeight: 800, fontSize: 14 }}>
-                        {formatINR(totals.small.expected, { compact: true })} exp.
+                        {formatINR(totals.expected, { compact: true })} exp.
                       </TableCell>
                       <TableCell align="right" sx={{ borderTop: "2px solid rgba(255,255,255,0.2)", color: PROPERTIES.small.accent, fontWeight: 800, fontSize: 14 }}>
-                        {totals.small.final > 0 ? `${formatINR(totals.small.final, { compact: true })} fin.` : "—"}
-                      </TableCell>
-                      <TableCell colSpan={2} align="right" sx={{ borderTop: "2px solid rgba(255,255,255,0.2)", borderLeft: "1px solid rgba(255,255,255,0.06)", color: PROPERTIES.large.accent, fontWeight: 800, fontSize: 14 }}>
-                        {formatINR(totals.large.expected, { compact: true })} exp.
-                      </TableCell>
-                      <TableCell align="right" sx={{ borderTop: "2px solid rgba(255,255,255,0.2)", color: PROPERTIES.large.accent, fontWeight: 800, fontSize: 14 }}>
-                        {totals.large.final > 0 ? `${formatINR(totals.large.final, { compact: true })} fin.` : "—"}
+                        {totals.final > 0 ? `${formatINR(totals.final, { compact: true })} fin.` : "—"}
                       </TableCell>
                     </TableRow>
                   </TableBody>

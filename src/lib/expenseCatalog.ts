@@ -52,6 +52,8 @@ const SEED_ITEMS: ExpenseItem[] = [
   { id: "paintings", categoryId: "interior-decor", name: "Paintings", sortOrder: 2 },
   { id: "postersInterior", categoryId: "interior-decor", name: "Posters — interior design", sortOrder: 3 },
   { id: "glassWallSticker", categoryId: "interior-decor", name: "Glass wall sticker", sortOrder: 4 },
+  { id: "glassDoor", categoryId: "interior-decor", name: "Glass door", sortOrder: 5 },
+  { id: "woodwork", categoryId: "interior-decor", name: "Woodwork", sortOrder: 6 },
 
   { id: "neonLights", categoryId: "lighting", name: "Neon lights", sortOrder: 0 },
   { id: "ledLight", categoryId: "lighting", name: "LED light", sortOrder: 1 },
@@ -81,6 +83,10 @@ const SEED_ITEMS: ExpenseItem[] = [
   { id: "fbInstaAdCampaign", categoryId: "marketing-digital", name: "Facebook & Insta ad campaign", sortOrder: 5 },
 
   { id: "bankingAccount", categoryId: "business-admin", name: "Banking account", sortOrder: 0 },
+  { id: "placeAdvance", categoryId: "business-admin", name: "Advance for the place", sortOrder: 1 },
+  { id: "bbmpLicense", categoryId: "business-admin", name: "BBMP license", sortOrder: 2 },
+  { id: "proprietorshipRegistration", categoryId: "business-admin", name: "Proprietorship registration", sortOrder: 3 },
+  { id: "fssaiLicense", categoryId: "business-admin", name: "FSSAI license", sortOrder: 4 },
 
   { id: "signboard", categoryId: "branding-signage", name: "Signboard / exterior branding", sortOrder: 0 },
 

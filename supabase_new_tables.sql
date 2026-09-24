@@ -31,3 +31,10 @@ create table expense_items (
   sort_order integer not null default 0
 );
 alter table expense_items disable row level security;
+
+create table marketing_posts (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table marketing_posts disable row level security;
