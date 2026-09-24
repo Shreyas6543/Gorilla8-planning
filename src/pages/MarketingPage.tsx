@@ -20,12 +20,14 @@ const PHASE_COLOR: Record<Phase, string> = {
   build: "#4FC3F7",
   countdown: "#FFB648",
   launch: ACCENT,
+  live: "#B388FF",
 };
 const PHASE_SHORT: Record<Phase, string> = {
   hype: "Hype",
   build: "Build",
   countdown: "Countdown",
   launch: "Launch",
+  live: "Live",
 };
 
 function dateParts(iso: string) {
@@ -185,7 +187,7 @@ export function MarketingPage() {
       }}
     >
       <Container maxWidth="md" sx={{ pt: { xs: 4, md: 6 } }}>
-        <PageHeader subtitle="Pre-opening Instagram/Facebook/LinkedIn posting schedule — Tue/Thu/Sat, counting down to opening day." />
+        <PageHeader subtitle="Instagram/Facebook/LinkedIn posting schedule — from the first teaser through opening day and the first week." />
 
         <Stack spacing={3}>
           <Paper
@@ -224,7 +226,7 @@ export function MarketingPage() {
 
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
             <Typography variant="caption" sx={{ color: "text.secondary" }}>
-              Tue · Thu · Sat — 3 posts/week on Instagram + Facebook
+              Tue · Thu · Sat — 3 posts/week on Instagram + Facebook, plus a Sunday teaser before opening
             </Typography>
             <Typography
               variant="caption"
