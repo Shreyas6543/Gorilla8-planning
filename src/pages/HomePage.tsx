@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Box, Button, Container, Paper, Slider, Stack, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
 import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import { HOUR_OPTIONS, PROPERTIES, DEFAULT_HOURS } from "../config/properties";
-import { calcScenario } from "../lib/calculations";
+import { calcScenario, formatINR } from "../lib/calculations";
+import { useCapitalStatus } from "../lib/useCapitalStatus";
 import { PageHeader } from "../components/PageHeader";
 import { PropertyCard } from "../components/PropertyCard";
 import { CapitalBar } from "../components/CapitalAllocation";
@@ -21,7 +21,7 @@ const PRESETS = [
 export function HomePage() {
   const property = PROPERTIES.small;
   const [hoursPerDay, setHoursPerDay] = useState<number>(DEFAULT_HOURS);
-  const [racingSim, setRacingSim] = useState<number>(property.maxRacingSim);
+  const capital = useCapitalStatus();
 
   const result = useMemo(
     () =>
@@ -29,10 +29,10 @@ export function HomePage() {
         pool: property.minPool,
         ps5: property.minPs5,
         carrom: property.minCarrom,
-        racingSim,
+        racingSim: 0,
         hoursPerDay,
       }),
-    [hoursPerDay, racingSim]
+    [hoursPerDay]
   );
 
   return (
@@ -46,10 +46,10 @@ export function HomePage() {
       }}
     >
       <Container maxWidth="md" sx={{ pt: { xs: 4, md: 6 } }}>
-        <PageHeader subtitle="Your plan: the 1,350 sq ft space. Simple numbers first — the full 2,000 sq ft comparison lives on a separate page." />
+        <PageHeader subtitle="Your plan: the 1,350 sq ft space — 3 pool tables and 5 PS5 stations." />
 
         <Stack spacing={3}>
-          {/* Why this property + new idea, in plain language */}
+          {/* The plan, in plain language */}
           <Paper
             elevation={0}
             sx={{
@@ -60,29 +60,14 @@ export function HomePage() {
             }}
           >
             <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>
-              Why 1,350 sq ft
+              The plan
             </Typography>
             <Typography sx={{ color: "text.secondary", lineHeight: 1.7 }}>
-              Lower rent (₹40k vs ₹70k/month), a smaller upfront investment (₹15L vs ₹22L), and it pays back faster
-              at most utilization levels — see the{" "}
-              <Box
-                component={RouterLink}
-                to="/comparison"
-                sx={{ color: "primary.main", fontWeight: 700, textDecoration: "none" }}
-              >
-                full comparison
-              </Box>{" "}
-              for the numbers behind that call.
-            </Typography>
-            <Typography sx={{ color: "text.secondary", lineHeight: 1.7, mt: 1.5 }}>
-              <b style={{ color: "#F2F4F7" }}>New idea:</b> 1,350 sq ft leaves ₹15L of capital sitting unused. One
-              racing simulator rig (steering wheel + pedals) can turn part of that idle capital into extra revenue —
-              at <b style={{ color: "#F2F4F7" }}>₹350/hour</b>, well above a plain PS5 station's ₹200/hour. Toggle it
-              below to see the effect.
+              1,350 sq ft, ₹40k/month rent, ₹20L total capital — 3 pool tables and 5 PS5 stations to start.
             </Typography>
           </Paper>
 
-          {/* Controls: hours + racing sim */}
+          {/* Controls: utilization hours */}
           <Paper
             elevation={0}
             sx={{
@@ -130,30 +115,6 @@ export function HomePage() {
                 </Button>
               ))}
             </Stack>
-
-            <Stack direction="row" sx={{ justifyContent: "space-between", alignItems: "baseline", mt: 3 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>
-                Racing simulator (new idea, ₹350/hr)
-              </Typography>
-            </Stack>
-            <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-              <Button
-                size="small"
-                variant={racingSim === 0 ? "contained" : "outlined"}
-                onClick={() => setRacingSim(0)}
-                sx={{ color: racingSim === 0 ? "#04140a" : "text.primary", borderColor: "rgba(255,255,255,0.15)" }}
-              >
-                Off
-              </Button>
-              <Button
-                size="small"
-                variant={racingSim === 1 ? "contained" : "outlined"}
-                onClick={() => setRacingSim(1)}
-                sx={{ color: racingSim === 1 ? "#04140a" : "text.primary", borderColor: "rgba(255,255,255,0.15)" }}
-              >
-                On (1 rig)
-              </Button>
-            </Stack>
           </Paper>
 
           {/* The full picture for 1,350 sq ft */}
@@ -163,44 +124,23 @@ export function HomePage() {
             pool={property.minPool}
             ps5={property.minPs5}
             carrom={property.minCarrom}
-            racingSim={racingSim}
+            invested={capital.invested}
+            remaining={capital.remaining}
             showBreakdown
           />
 
-          <SinglePropertyChart hoursPerDay={hoursPerDay} racingSim={racingSim} />
+          <SinglePropertyChart hoursPerDay={hoursPerDay} />
 
           <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 4 }}>
             <Typography variant="h6" sx={{ fontWeight: 800 }}>
               Capital in play
             </Typography>
             <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
-              ₹15L goes into setup; the rest stays in reserve — the racing simulator idea is a way to put some of that
-              reserve to work.
+              {capital.loaded
+                ? `${formatINR(capital.invested, { compact: true })} spent so far, out of a ₹${(capital.totalCapital / 100000).toFixed(0)}L pool.`
+                : "Loading actual spend from the Expenses page…"}
             </Typography>
-            <CapitalBar property={property} />
-          </Paper>
-
-          <Paper
-            elevation={0}
-            sx={{
-              p: { xs: 2.5, md: 3 },
-              borderRadius: 4,
-              textAlign: "center",
-              border: "1px solid rgba(255,255,255,0.08)",
-            }}
-          >
-            <Typography sx={{ color: "text.secondary", mb: 1.5 }}>
-              Want to see how this stacks up against the 2,000 sq ft option, with all the same controls?
-            </Typography>
-            <Button
-              component={RouterLink}
-              to="/comparison"
-              variant="contained"
-              endIcon={<ArrowForwardIcon />}
-              sx={{ color: "#04140a" }}
-            >
-              Open full comparison
-            </Button>
+            <CapitalBar property={property} invested={capital.invested} remaining={capital.remaining} />
           </Paper>
 
           <Paper
@@ -228,8 +168,7 @@ export function HomePage() {
 
           <Typography variant="caption" sx={{ color: "text.secondary", textAlign: "center", pt: 1 }}>
             Gaming revenue model — excludes food, memberships, taxes and variable costs. ₹200/hour per pool/PS5
-            station, ₹350/hour per racing simulator rig. "Operating surplus" is revenue minus stated fixed expenses
-            only — not net profit.
+            station. "Operating surplus" is revenue minus stated fixed expenses only — not net profit.
           </Typography>
         </Stack>
       </Container>

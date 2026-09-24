@@ -1,7 +1,7 @@
 // Single source of truth for all financial assumptions.
 // Changing a value here updates every calculation and visualization in the app.
 
-export type PropertyId = "small" | "large";
+export type PropertyId = "small";
 
 export interface PropertyConfig {
   id: PropertyId;
@@ -47,8 +47,8 @@ export const PROPERTIES: Record<PropertyId, PropertyConfig> = {
     rent: 40000,
     advance: 400000,
     setupInvestment: 1500000,
-    remainingCapital: 1500000,
-    otherExpenses: 35000,
+    remainingCapital: 500000,
+    otherExpenses: 45000,
     minPool: 3,
     maxPool: 3,
     minPs5: 5,
@@ -56,44 +56,20 @@ export const PROPERTIES: Record<PropertyId, PropertyConfig> = {
     minCarrom: 0,
     maxCarrom: 0,
     minRacingSim: 0,
-    maxRacingSim: 1,
+    maxRacingSim: 0,
     accent: "#39FF88",
     accentSoft: "rgba(57, 255, 136, 0.14)",
     emoji: "🟢",
   },
-  large: {
-    id: "large",
-    name: "2,000 sq ft",
-    shortLabel: "2,000 sq ft",
-    sqft: 2000,
-    rent: 70000,
-    advance: null,
-    setupInvestment: 2200000,
-    remainingCapital: 800000,
-    otherExpenses: 35000,
-    minPool: 3,
-    maxPool: 4,
-    minPs5: 5,
-    maxPs5: 8,
-    minCarrom: 0,
-    maxCarrom: 1,
-    minRacingSim: 0,
-    maxRacingSim: 0,
-    accent: "#3DB2FF",
-    accentSoft: "rgba(61, 178, 255, 0.14)",
-    emoji: "🔵",
-  },
 };
-
-export const PROPERTY_LIST = Object.values(PROPERTIES);
 
 export function fixedMonthlyExpense(p: PropertyConfig): number {
   return p.rent + p.otherExpenses;
 }
 
-// For each property, setup investment + remaining capital sums to the same
-// ₹30L total pool of available capital — this is what the capital
-// allocation chart visualizes (invested vs. remaining, out of a shared 30L).
+// Setup investment + remaining capital sums to the ₹20L total pool of
+// available capital — this is what the capital allocation bar visualizes
+// (invested vs. remaining, out of the 20L).
 export function totalCapitalPool(p: PropertyConfig): number {
   return p.setupInvestment + p.remainingCapital;
 }

@@ -7,8 +7,8 @@ import { useAdmin } from "../state/adminAuth";
 
 const NAV_LINKS = [
   { to: "/", label: "Home" },
-  { to: "/comparison", label: "Comparison" },
   { to: "/expenses", label: "Expenses" },
+  { to: "/marketing", label: "Marketing" },
   { to: "/floorplan", label: "Floor Plan" },
   { to: "/design", label: "Design" },
 ];
