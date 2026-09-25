@@ -63,6 +63,12 @@ scattered through components.
 - `src/lib/editAccess.ts` — the Expenses-page edit gate (see below).
 - `src/pages/` — `HomePage.tsx` (`/`), `ComparisonPage.tsx` (`/comparison`),
   `ExpensesPage.tsx` (`/expenses`). `App.tsx` is just the router shell.
+- `src/pages/LedgerPage.tsx` (`/ledger`) + `src/lib/ledger.ts` — dated log of money
+  actually spent (distinct from the Expenses checklist, which is planning: expected vs
+  final price per item). Viewable by everyone; admins get an Edit/View toggle (same as
+  Expenses) and Add/edit/delete only appear in edit mode. Persists as one singleton jsonb row
+  (`data = { entries }`) in the Supabase `ledger_entries` table + a localStorage backup;
+  saves immediately on each add/edit/delete (no debounce).
 - `src/components/` — reusable pieces (`PropertyCard`, `MetricCard`,
   `ScenarioControls`, the various charts, `PageHeader` for the top nav).
 

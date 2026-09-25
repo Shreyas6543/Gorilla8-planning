@@ -38,3 +38,12 @@ create table marketing_posts (
   updated_at timestamptz not null default now()
 );
 alter table marketing_posts disable row level security;
+
+-- Ledger of actual spend (Ledger page). Same singleton-row jsonb pattern as
+-- expense_data / marketing_posts: data = { entries: [...] }.
+create table ledger_entries (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table ledger_entries disable row level security;
