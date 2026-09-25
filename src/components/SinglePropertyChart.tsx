@@ -6,17 +6,19 @@ import { calcScenario } from "../lib/calculations";
 
 interface SinglePropertyChartProps {
   hoursPerDay: number;
+  pool: number; // pool tables placed in the venue layout
+  ps5: number; // PS5 stations placed in the venue layout
 }
 
-export function SinglePropertyChart({ hoursPerDay }: SinglePropertyChartProps) {
+export function SinglePropertyChart({ hoursPerDay, pool, ps5 }: SinglePropertyChartProps) {
   const hours: number[] = [...HOUR_OPTIONS];
   const property = PROPERTIES.small;
 
   const revenueSeries = hours.map(
     (h) =>
       calcScenario(property, {
-        pool: property.minPool,
-        ps5: property.minPs5,
+        pool,
+        ps5,
         carrom: property.minCarrom,
         racingSim: 0,
         hoursPerDay: h,
@@ -25,8 +27,8 @@ export function SinglePropertyChart({ hoursPerDay }: SinglePropertyChartProps) {
   const surplusSeries = hours.map(
     (h) =>
       calcScenario(property, {
-        pool: property.minPool,
-        ps5: property.minPs5,
+        pool,
+        ps5,
         carrom: property.minCarrom,
         racingSim: 0,
         hoursPerDay: h,

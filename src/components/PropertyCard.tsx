@@ -99,8 +99,8 @@ export function PropertyCard({
       <Divider sx={{ my: 2 }} />
 
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
-        <Chip label={`🎱 Pool ${capacityLabel(property.minPool, property.maxPool)}`} size="small" variant="outlined" />
-        <Chip label={`🎮 PS5 ${capacityLabel(property.minPs5, property.maxPs5)}`} size="small" variant="outlined" />
+        <Chip label={`🎱 Pool ${pool}`} size="small" variant="outlined" />
+        <Chip label={`🎮 PS5 ${ps5}`} size="small" variant="outlined" />
         <Chip
           label={`🟤 Carrom ${capacityLabel(property.minCarrom, property.maxCarrom)}`}
           size="small"

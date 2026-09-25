@@ -5,6 +5,8 @@ import MapOutlinedIcon from "@mui/icons-material/MapOutlined";
 import { HOUR_OPTIONS, PROPERTIES, DEFAULT_HOURS } from "../config/properties";
 import { calcScenario, formatINR } from "../lib/calculations";
 import { useCapitalStatus } from "../lib/useCapitalStatus";
+import { venueCounts } from "../lib/venueCounts";
+import { useFurnitureLayout } from "../state/furnitureLayout";
 import { PageHeader } from "../components/PageHeader";
 import { PropertyCard } from "../components/PropertyCard";
 import { CapitalBar } from "../components/CapitalAllocation";
@@ -23,16 +25,25 @@ export function HomePage() {
   const [hoursPerDay, setHoursPerDay] = useState<number>(DEFAULT_HOURS);
   const capital = useCapitalStatus();
 
+  // Station counts come from the furniture layout (Design / Floor Plan), not
+  // from fixed config — add or remove a pool table or PS5 there and every
+  // number on this page follows. `items` is the published layout unless this
+  // browser has unpublished Design edits, in which case those are used.
+  const { items, hasLocalEdits } = useFurnitureLayout();
+  const { pool, ps5 } = useMemo(() => venueCounts(items), [items]);
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const stationsText = `${plural(pool, "pool table")} and ${plural(ps5, "PS5 station")}`;
+
   const result = useMemo(
     () =>
       calcScenario(property, {
-        pool: property.minPool,
-        ps5: property.minPs5,
+        pool,
+        ps5,
         carrom: property.minCarrom,
         racingSim: 0,
         hoursPerDay,
       }),
-    [hoursPerDay]
+    [pool, ps5, hoursPerDay]
   );
 
   return (
@@ -46,7 +57,7 @@ export function HomePage() {
       }}
     >
       <Container maxWidth="md" sx={{ pt: { xs: 4, md: 6 } }}>
-        <PageHeader subtitle="Your plan: the 1,350 sq ft space — 3 pool tables and 5 PS5 stations." />
+        <PageHeader subtitle={`Your plan: the 1,350 sq ft space — ${stationsText}.`} />
 
         <Stack spacing={3}>
           {/* The plan, in plain language */}
@@ -63,7 +74,12 @@ export function HomePage() {
               The plan
             </Typography>
             <Typography sx={{ color: "text.secondary", lineHeight: 1.7 }}>
-              1,350 sq ft, ₹40k/month rent, ₹20L total capital — 3 pool tables and 5 PS5 stations to start.
+              1,350 sq ft, ₹40k/month rent, ₹20L total capital — {stationsText} to start.
+            </Typography>
+            <Typography variant="caption" sx={{ color: "text.secondary", display: "block", mt: 1 }}>
+              {hasLocalEdits
+                ? "Numbers use your unpublished layout from the Design page (only you see this)."
+                : "Numbers follow the pool tables and PS5 stations placed in the venue layout."}
             </Typography>
           </Paper>
 
@@ -121,15 +137,15 @@ export function HomePage() {
           <PropertyCard
             property={property}
             result={result}
-            pool={property.minPool}
-            ps5={property.minPs5}
+            pool={pool}
+            ps5={ps5}
             carrom={property.minCarrom}
             invested={capital.invested}
             remaining={capital.remaining}
             showBreakdown
           />
 
-          <SinglePropertyChart hoursPerDay={hoursPerDay} />
+          <SinglePropertyChart hoursPerDay={hoursPerDay} pool={pool} ps5={ps5} />
 
           <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3 }, borderRadius: 4 }}>
             <Typography variant="h6" sx={{ fontWeight: 800 }}>

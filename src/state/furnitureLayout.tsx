@@ -59,6 +59,7 @@ interface FurnitureLayoutContextValue {
   items: FurnitureItem[]; // local sandbox if edited, else baseItems
   baseItems: FurnitureItem[]; // published default only, never affected by local edits (Floor Plan view)
   baseLoaded: boolean;
+  hasLocalEdits: boolean; // true when this browser's sandbox differs from the published layout
   catalog: CatalogEntry[];
   addCatalogEntry: (entry: CatalogEntry) => Promise<{ ok: boolean; error?: string }>;
   addInstance: (catalogEntry: CatalogEntry) => void;
@@ -293,6 +294,7 @@ export function FurnitureLayoutProvider({ children }: { children: ReactNode }) {
       items,
       baseItems,
       baseLoaded,
+      hasLocalEdits: localItems !== null,
       catalog,
       addCatalogEntry,
       addInstance,
@@ -316,6 +318,7 @@ export function FurnitureLayoutProvider({ children }: { children: ReactNode }) {
       items,
       baseItems,
       baseLoaded,
+      localItems,
       catalog,
       addCatalogEntry,
       addInstance,

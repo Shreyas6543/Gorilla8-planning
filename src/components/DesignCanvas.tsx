@@ -35,6 +35,51 @@ function colorFor(item: FurnitureItem): string {
   return item.renderType === "generic" && item.color ? item.color : TYPE_COLOR[item.renderType];
 }
 
+// Movement/resize snapping. The base grid is fine (0.1 ft) so nothing is
+// stuck on coarse steps, and an edge within SNAP_FT of a wall or another
+// item's edge is pulled flush onto it — the walls sit at odd positions
+// (36.7, 21.2, 16.5 ft...) that no half-foot grid can land on exactly.
+const GRID_FT = 0.1;
+const SNAP_FT = 0.4;
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const toGrid = (n: number) => round2(Math.round(n / GRID_FT) * GRID_FT);
+
+// Position (along one axis) for an item of `size` whose grid-rounded start is
+// `start`: if its leading or trailing edge is within SNAP_FT of any of
+// `edges`, line that edge up exactly; otherwise keep the grid position.
+function snapStart(start: number, size: number, edges: number[]): number {
+  let best = toGrid(start);
+  let bestDist = SNAP_FT;
+  for (const e of edges) {
+    const dLead = Math.abs(e - start);
+    if (dLead < bestDist) {
+      bestDist = dLead;
+      best = e;
+    }
+    const dTrail = Math.abs(e - (start + size));
+    if (dTrail < bestDist) {
+      bestDist = dTrail;
+      best = e - size;
+    }
+  }
+  return round2(best);
+}
+
+// Same idea for a single moving edge (resize): snap it onto a candidate, else the grid.
+function snapEdge(edge: number, edges: number[]): number {
+  let best = toGrid(edge);
+  let bestDist = SNAP_FT;
+  for (const e of edges) {
+    const d = Math.abs(e - edge);
+    if (d < bestDist) {
+      bestDist = d;
+      best = e;
+    }
+  }
+  return round2(best);
+}
+
 const INVALID_COLOR = "#FF3B30";
 const GUIDE_COLOR = "#FFD54A";
 const HANDLE_HIT_RADIUS = 1.1; // feet — generously bigger than the visible glyph, easy to grab
@@ -82,6 +127,22 @@ const HORIZONTAL_WALLS = WALL_SEGMENTS.filter((s) => s.from[1] === s.to[1] && !s
   x0: Math.min(s.from[0], s.to[0]),
   x1: Math.max(s.from[0], s.to[0]),
 }));
+
+// Vertical edge positions (x) worth snapping to: real walls whose span
+// overlaps [y0, y1], plus every other item's left/right edge.
+function xSnapEdges(y0: number, y1: number, others: Rect[]): number[] {
+  const edges: number[] = [];
+  for (const w of VERTICAL_WALLS) if (rangesOverlap(w.y0, w.y1, y0, y1)) edges.push(w.x);
+  for (const o of others) edges.push(o.x, o.x + o.w);
+  return edges;
+}
+
+function ySnapEdges(x0: number, x1: number, others: Rect[]): number[] {
+  const edges: number[] = [];
+  for (const w of HORIZONTAL_WALLS) if (rangesOverlap(w.x0, w.x1, x0, x1)) edges.push(w.y);
+  for (const o of others) edges.push(o.y, o.y + o.h);
+  return edges;
+}
 
 // For the dragged item, find the gap to the nearest obstacle (a real wall,
 // or another item's facing edge) in each of the 4 directions — Figma-style
@@ -141,7 +202,8 @@ function clientToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number) 
 const MIN_SIZE_FT = 1;
 
 export function DesignCanvas() {
-  const { items, updatePosition, updateFootprintSize, toggleRotation, beginGesture, undo, canUndo } = useFurnitureLayout();
+  const { items, updatePosition, updateFootprintSize, toggleRotation, removeInstance, beginGesture, undo, canUndo } =
+    useFurnitureLayout();
   const dragRef = useRef<{ id: string; dx: number; dy: number } | null>(null);
   const resizeRef = useRef<{ id: string; originX: number; originY: number } | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -192,8 +254,16 @@ export function DesignCanvas() {
     const svg = e.currentTarget.ownerSVGElement;
     if (!svg) return;
     const pt = clientToSvgPoint(svg, e.clientX, e.clientY);
-    const nx = Math.round((pt.x - drag.dx) * 2) / 2; // snap to half-foot grid
-    const ny = Math.round((pt.y - drag.dy) * 2) / 2;
+    const item = items.find((i) => i.id === drag.id);
+    if (!item) return;
+    const { w, h } = footprint(item);
+    const others = items.filter((i) => i.id !== drag.id).map((i) => footprintRect(i));
+    const rawX = pt.x - drag.dx;
+    const rawY = pt.y - drag.dy;
+    // Snap x first (against walls/items spanning the item's rows), then y
+    // against the snapped x — so a corner can lock flush on both axes at once.
+    const nx = snapStart(rawX, w, xSnapEdges(toGrid(rawY), toGrid(rawY) + h, others));
+    const ny = snapStart(rawY, h, ySnapEdges(nx, nx + w, others));
     updatePosition(drag.id, nx, ny);
   }
 
@@ -205,7 +275,7 @@ export function DesignCanvas() {
 
   // Resize handle — bottom-right corner. Top-left (x, y) stays fixed; the
   // footprint grows/shrinks toward the corner being dragged, snapped to the
-  // same half-foot grid, with a 1ft floor so it can't collapse to nothing.
+  // same snapping as moving (fine grid + flush to walls/items), with a 1ft floor so it can't collapse to nothing.
   function onResizePointerDown(e: React.PointerEvent<SVGGElement>, item: FurnitureItem, rect: Rect) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -220,8 +290,13 @@ export function DesignCanvas() {
     const svg = e.currentTarget.ownerSVGElement;
     if (!svg) return;
     const pt = clientToSvgPoint(svg, e.clientX, e.clientY);
-    const w = Math.max(MIN_SIZE_FT, Math.round((pt.x - resize.originX) * 2) / 2);
-    const h = Math.max(MIN_SIZE_FT, Math.round((pt.y - resize.originY) * 2) / 2);
+    const cur = rects.get(resize.id);
+    if (!cur) return;
+    const others = items.filter((i) => i.id !== resize.id).map((i) => footprintRect(i));
+    const rightEdge = snapEdge(pt.x, xSnapEdges(cur.y, cur.y + cur.h, others));
+    const bottomEdge = snapEdge(pt.y, ySnapEdges(cur.x, cur.x + cur.w, others));
+    const w = Math.max(MIN_SIZE_FT, round2(rightEdge - resize.originX));
+    const h = Math.max(MIN_SIZE_FT, round2(bottomEdge - resize.originY));
     updateFootprintSize(resize.id, w, h);
   }
 
@@ -285,6 +360,23 @@ export function DesignCanvas() {
               >
                 {item.label}
               </text>
+
+              {/* Delete handle — top-left corner. Undoable (Ctrl+Z). */}
+              <g
+                transform={`translate(${rect.x} ${rect.y})`}
+                style={{ cursor: "pointer" }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeInstance(item.id);
+                }}
+              >
+                <circle cx={0} cy={0} r={HANDLE_HIT_RADIUS} fill="#000" fillOpacity={0.001} />
+                <circle cx={0} cy={0} r={handleSize / 2} fill="#1a1c1f" stroke={INVALID_COLOR} strokeWidth={0.08} style={{ pointerEvents: "none" }} />
+                <text x={0} y={0} fontSize={handleSize * 0.95} textAnchor="middle" dominantBaseline="central" fill={INVALID_COLOR} style={{ pointerEvents: "none" }}>
+                  ×
+                </text>
+              </g>
 
               {/* Rotate handle — top-right corner. Hit area is deliberately
                   bigger than the visible glyph so it's easy to grab even on
