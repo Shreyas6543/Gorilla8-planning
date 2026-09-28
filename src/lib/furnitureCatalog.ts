@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from "./supabaseClient";
 // the Design page (pool table, PS5 station, ... plus anything they create).
 // Distinct from furniture_layout, which stores actual placed INSTANCES.
 
-export type RenderType = "pool" | "ps5" | "racingSim" | "counter" | "cabinet" | "sofaUnit" | "plantPot" | "generic";
+export type RenderType = "pool" | "ps5" | "racingSim" | "counter" | "cabinet" | "sofaUnit" | "plantPot" | "kitchen" | "generic";
 
 export interface CatalogEntry {
   id: string;
@@ -32,6 +32,11 @@ export const BUILTIN_CATALOG: CatalogEntry[] = [
   // out further.
   { id: "sofa-unit", name: "Sofa Unit", builtin: true, renderType: "sofaUnit", defaultWidth: 6, defaultDepth: 2.5, defaultElevation: 8 },
   { id: "plant-pot", name: "Plant Pot", builtin: true, renderType: "plantPot", defaultWidth: 1.5, defaultDepth: 1.5, defaultElevation: 2.8 },
+  // Corner kitchen kiosk: two solid walls against the room's walls, two open
+  // faces with a service window (1ft of solid wall at each end), a counter
+  // slab outside each window, and a red/white striped awning. Rotate it to
+  // put the open faces at a different corner. See lib/kitchenGeometry.ts.
+  { id: "kitchen", name: "Kitchen", builtin: true, renderType: "kitchen", defaultWidth: 10, defaultDepth: 8, defaultElevation: 9.2 },
 ];
 
 interface CatalogRow {

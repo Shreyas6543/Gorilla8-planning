@@ -69,6 +69,12 @@ scattered through components.
   Expenses) and Add/edit/delete only appear in edit mode. Persists as one singleton jsonb row
   (`data = { entries }`) in the Supabase `ledger_entries` table + a localStorage backup;
   saves immediately on each add/edit/delete (no debounce).
+- **Kitchen** (`renderType: "kitchen"`, catalog id `kitchen`, default 10x8x9.2 ft) — corner kiosk built by
+  `Kitchen`/`KitchenFace`/`KitchenAwning` in `WalkthroughScene.tsx`. At 0° the north/west faces are solid
+  (sit them in a room corner) and the south/east faces are open: a service window with 1 ft of solid wall at
+  each end, a fluted counter + slab outside it, and a red/white scalloped awning + sign band. Rotate (90° steps)
+  to open other corners. `lib/kitchenGeometry.ts` holds the shared dims + `kitchenOpenings()`, used by the 3D
+  model and by `KitchenMarks.tsx` (striped band + arrow on each open side in the Design/Floor Plan 2D views).
 - `src/components/` — reusable pieces (`PropertyCard`, `MetricCard`,
   `ScenarioControls`, the various charts, `PageHeader` for the top nav).
 

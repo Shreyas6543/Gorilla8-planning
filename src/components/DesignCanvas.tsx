@@ -5,6 +5,7 @@ import { footprint, type FurnitureItem } from "../config/layout";
 import type { RenderType } from "../lib/furnitureCatalog";
 import { useFurnitureLayout } from "../state/furnitureLayout";
 import { RoomOutline, DimensionLabels, bounds } from "./FloorPlanSvg";
+import { KitchenMarks } from "./KitchenMarks";
 
 const FACING_COLOR = "#FFFFFF";
 
@@ -28,6 +29,7 @@ const TYPE_COLOR: Record<RenderType, string> = {
   cabinet: "#B88A4A",
   sofaUnit: "#7A2C20",
   plantPot: "#2E7D32",
+  kitchen: "#E53935",
   generic: "#8899AA",
 };
 
@@ -346,6 +348,7 @@ export function DesignCanvas() {
                 onPointerMove={onPointerMove}
                 onPointerUp={onPointerUp}
               />
+              {item.renderType === "kitchen" && <KitchenMarks item={item} />}
               {facing && (
                 <FacingArrow cx={rect.x + rect.w / 2} cy={rect.y + rect.h / 2} dx={facing[0]} dy={facing[1]} />
               )}
