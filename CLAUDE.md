@@ -54,6 +54,12 @@ scattered through components.
 - `src/lib/supabaseClient.ts` — creates the Supabase client from
   `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` (both in `.env.local`,
   gitignored). `isSupabaseConfigured` is `false` if either is missing.
+- `src/lib/useCapitalStatus.ts` — "remaining capital" = the ₹20L total pool minus the Ledger's
+  running total (the initial, pre-launch expenses Shreyas logs there). NOT derived from the
+  Expenses-page checklist — that page is planning estimates, the Ledger is what's actually been
+  spent. Read by Home's capital bar and Finance's corpus base; once the venue launches, ongoing
+  costs move to Finance's monthly entries instead, so this figure settles rather than double-
+  counting Finance's expenses.
 - `src/lib/expenses.ts` — load/save/compute helpers for the Expenses page.
   `loadExpenseState()`/`saveExpenseState()` are now **async**: they read/write
   a single row (`id = 'singleton'`, `data` = the whole state as JSONB) in the
@@ -75,6 +81,14 @@ scattered through components.
   each end, a fluted counter + slab outside it, and a red/white scalloped awning + sign band. Rotate (90° steps)
   to open other corners. `lib/kitchenGeometry.ts` holds the shared dims + `kitchenOpenings()`, used by the 3D
   model and by `KitchenMarks.tsx` (striped band + arrow on each open side in the Design/Floor Plan 2D views).
+- `src/pages/FinancePage.tsx` (`/finance`) + `src/lib/monthlyFinance.ts` — monthly revenue vs.
+  expenses (admin adds each month + its expense lines, default seeded Rent/Salary/WiFi/Electricity;
+  everyone can view). A month's net profit (revenue minus its expense lines) splits 50/25/25 between
+  the three partners (Shreyas/Tushar/Yashwanth) ONLY when net > 0 — a loss or exact break-even pays
+  nobody. A loss instead subtracts from a running "corpus" (`corpusTimeline()`), a shared reserve that
+  starts at an admin-entered `startingCorpus` (`null` = not set — never invented, per the rule below).
+  Profit is NOT banked back into the corpus, only paid out. Same admin Edit/View gating + debounced
+  autosave as Expenses; persists as one singleton jsonb row in Supabase table `monthly_finance`.
 - `src/components/` — reusable pieces (`PropertyCard`, `MetricCard`,
   `ScenarioControls`, the various charts, `PageHeader` for the top nav).
 
@@ -226,10 +240,23 @@ Shreyas signed off on this as the interior's dark-grey base look. In
   deliberately different shades — carpet is darker/more matte (higher
   roughness) than the wall/ceiling grey, so the surfaces still read as
   distinct materials rather than one flat box.
-- Glass walls use `GLASS_COLOR` (grey) with `transmission: 0.1` — the real
-  glass will get outward-facing ad-sticker vinyl, so from inside it should
-  read as ~10% see-through tinted glass, not clear. Mullions are a dark
-  metal (`MULLION_COLOR`), no longer the old light-beige tone.
+- Glass walls use `GLASS_COLOR` (grey), `meshStandardMaterial`, roughness
+  0.85, at 90% opacity — the real glass will get outward-facing ad-sticker
+  vinyl, so from inside it should read as mostly-solid tinted glass, not
+  clear. Two things were tried and rejected here, both washing it out to a
+  bright white/grey sheen instead: (1) physically-based `transmission` —
+  it renders through its own separate render target, which conflicts with
+  the `EffectComposer` post-processing stack below (Bloom/N8AO/ToneMapping),
+  a known three.js/r3f incompatibility; (2) `meshPhysicalMaterial` even
+  WITHOUT transmission, at a glossy roughness (0.35) — its stronger default
+  specular/IOR response than `meshStandardMaterial` caught ordinary scene
+  lights and bloomed into the same white glow. The fix: the exact same
+  material type + a matte roughness as the opaque walls right next to it
+  (which have always rendered correctly dark), just with opacity added.
+  Don't reach for `meshPhysicalMaterial` or a glossy roughness here again —
+  both routes are dead ends already proven not to work in this scene.
+  Mullions are a dark metal (`MULLION_COLOR`), no longer the old light-beige
+  tone.
 - **All general room lighting was removed on purpose** (no `ambientLight`
   beyond a near-zero 0.035 fill just to keep unlit surfaces from computing
   to literal pure black, no `hemisphereLight`, no accent `pointLight`s, no
@@ -256,6 +283,24 @@ Shreyas signed off on this as the interior's dark-grey base look. In
   `CounterFace` in `Counter()`. `Cabinet()`'s body/cap colors were darkened
   to match (`COUNTER_BODY_COLOR`/`COUNTER_TOP_COLOR`) since the code
   already ties the two together as "one deliberate nook."
+
+**View settings (FOV / eye height) are user-adjustable, not one hardcoded
+number**: the "room looks too big / furniture too small" complaint came up
+repeatedly and was "fixed" three times by lowering the camera's `fov`
+(75 → 55 → 40) — it kept coming back because there's no single FOV that
+looks life-sized for every viewer's screen size and sitting distance, which
+this app has no way to know. Instead of a 4th guess, `/walkthrough` now has
+a "View settings" button (top-right) opening a dialog with Field of view
+(25–65°) and Eye height (4.5–6.5 ft) sliders — `WalkthroughPage.tsx` owns
+this state, persisted per-browser to `localStorage`
+(`gorilla8-walkthrough-view-v1`, same "local only, never synced" rule as the
+Design sandbox), and threads live `fov`/`eyeHeight` values down through
+`WalkthroughScene` as props (no more hardcoded `EYE_HEIGHT_FT`/`fov: 40`
+anywhere — `room3d.ts` only exports `DEFAULT_EYE_HEIGHT_FT`/`DEFAULT_FOV`
+now). `SceneSetup` syncs `camera.fov` reactively via `updateProjectionMatrix()`
+so dragging the slider updates the live render immediately, no reload. If
+this complaint resurfaces, it means the *slider* needs a wider range or a
+better default — not another blind camera-constant guess.
 
 **Critical version pin — do not "helpfully" upgrade React on this project**:
 `@react-three/fiber` (even its latest 10.0.0 canary builds, checked

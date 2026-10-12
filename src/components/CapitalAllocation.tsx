@@ -2,9 +2,10 @@ import { Box, Stack, Typography } from "@mui/material";
 import { PROPERTIES } from "../config/properties";
 import { formatINR } from "../lib/calculations";
 
-// invested/remaining are live figures (see useCapitalStatus) — never derived
-// from property.setupInvestment/remainingCapital here, so this bar always
-// reflects actual Expenses-page spend rather than a fixed planning number.
+// invested/remaining are live figures (see useCapitalStatus, sourced from
+// the Ledger) — never derived from property.setupInvestment/remainingCapital
+// here, so this bar always reflects actual spend rather than a fixed
+// planning number.
 export function CapitalBar({
   property,
   invested,

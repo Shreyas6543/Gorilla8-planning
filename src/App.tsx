@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HomePage } from "./pages/HomePage";
 import { ExpensesPage } from "./pages/ExpensesPage";
+import { FinancePage } from "./pages/FinancePage";
 import { LedgerPage } from "./pages/LedgerPage";
 import { MarketingPage } from "./pages/MarketingPage";
 import { FloorPlanPage } from "./pages/FloorPlanPage";
@@ -18,6 +19,7 @@ function App() {
             <Route path="/" element={<HomePage />} />
             <Route path="/expenses" element={<ExpensesPage />} />
             <Route path="/ledger" element={<LedgerPage />} />
+            <Route path="/finance" element={<FinancePage />} />
             <Route path="/marketing" element={<MarketingPage />} />
             <Route path="/floorplan" element={<FloorPlanPage />} />
             <Route path="/design" element={<DesignPage />} />

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { PointerLockControls, useGLTF, useTexture, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { buildWalls, isInsideRoom, EYE_HEIGHT_FT, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
+import { buildWalls, isInsideRoom, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
 import { OUTER_POLYGON, BEAMS, ENTRANCE, GLASS_WALL } from "../../config/floorplan";
 import { footprint, type FurnitureItem } from "../../config/layout";
 import { BUILTIN_CATALOG } from "../../lib/furnitureCatalog";
@@ -49,12 +49,21 @@ const SKIRTING_HEIGHT = 0.5;
 const START_X = (ENTRANCE.from[0] + ENTRANCE.to[0]) / 2;
 const START_Z = ENTRANCE.from[1] + 2; // just inside the doorway
 
-function SceneSetup() {
+function SceneSetup({ eyeHeight, fov }: { eyeHeight: number; fov: number }) {
   const { camera } = useThree();
   useEffect(() => {
-    camera.position.set(START_X, EYE_HEIGHT_FT, START_Z);
-    camera.lookAt(START_X, EYE_HEIGHT_FT, START_Z + 10); // face into the room
-  }, [camera]);
+    camera.position.set(START_X, eyeHeight, START_Z);
+    camera.lookAt(START_X, eyeHeight, START_Z + 10); // face into the room
+  }, [camera, eyeHeight]);
+  // Keeps the live camera's fov in sync with the "View settings" slider —
+  // a belt-and-braces update alongside the fov passed to <Canvas camera=...>,
+  // since that prop is only guaranteed applied on the camera's creation.
+  useEffect(() => {
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }, [camera, fov]);
   return null;
 }
 
@@ -100,7 +109,23 @@ function Walls() {
             {w.isGlass ? (
               // Ad stickers on the outside face + a grey privacy film means
               // only ~10% of outside light actually makes it through.
-              <meshPhysicalMaterial color={GLASS_COLOR} roughness={0.35} transmission={0.1} opacity={1} />
+              // Two things were tried here and both washed this out to a
+              // bright white/grey sheen instead of a dark tint:
+              // (1) physically-based `transmission` — it renders through its
+              //     own separate render target, which conflicts with the
+              //     EffectComposer post-processing stack below (Bloom/N8AO/
+              //     ToneMapping), a known three.js/r3f incompatibility.
+              // (2) `meshPhysicalMaterial` even WITHOUT transmission — it
+              //     still carries a stronger default specular/IOR response
+              //     than `meshStandardMaterial`, and at roughness 0.35 that
+              //     glossy highlight (from ordinary scene lights) blooms out
+              //     to a broad white glow — same Bloom effect, different
+              //     cause. The opaque walls right below use
+              //     `meshStandardMaterial` at a much higher (matte)
+              //     roughness and render correctly dark, so this now matches
+              //     that exact material/roughness, just with opacity added
+              //     for the slight see-through.
+              <meshStandardMaterial color={GLASS_COLOR} roughness={0.85} transparent opacity={0.9} />
             ) : (
               <meshStandardMaterial color={WALL_COLOR} roughness={0.92} />
             )}
@@ -984,6 +1009,21 @@ function AimedSpotLight({
   }, []);
   return (
     <>
+      {/* No castShadow: every current caller aims this at a flat surface
+          (a poster, a portrait, a bare wall wash) with nothing between the
+          fixture and what it's lighting, so a shadow map buys nothing
+          visually. It costs a lot, though — each shadow-casting light needs
+          its own shadow-map texture unit, and with 7 of these in the scene
+          (4 CornerAccentLight + 2 WallPosterSpotlight + 1 sofa gallery
+          light) plus the 3 pool table lights, that pushed any *textured*
+          lit material (map + standard lighting — the wall posters, the
+          sofa's gallery portraits) over WebGL's MAX_TEXTURE_IMAGE_UNITS(16),
+          which fails that material's shader compile and renders it solid
+          black. Plain-color materials (no map) stayed just under the limit,
+          which is why only textured surfaces broke. If a future AimedSpotLight
+          use case actually needs a shadow (something 3D standing between the
+          fixture and its target), pass it as a new optional prop — don't
+          make it the default again. */}
       <spotLight
         ref={lightRef}
         position={position}
@@ -993,7 +1033,6 @@ function AimedSpotLight({
         intensity={intensity}
         decay={decay}
         color={color}
-        castShadow
       />
       <object3D ref={targetRef} position={target} />
     </>
@@ -1091,9 +1130,9 @@ function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; wi
   // ones Shreyas added ("minion deadpool 1/2") flank it, same physical
   // frame size, same wall height — a straight gallery row.
   const [centerTexture, leftTexture, rightTexture] = useTexture([
-    "/textures/deadpool-poster.png",
+    "/textures/deadpool-poster.png?v=srgb1",
     "/textures/minion-deadpool-1.png",
-    "/textures/minion-deadpool-2.png",
+    "/textures/minion-deadpool-2.png?v=srgb1",
   ]);
   useMemo(() => {
     [centerTexture, leftTexture, rightTexture].forEach((t) => {
@@ -1584,7 +1623,7 @@ function EntranceThreshold() {
 const WALL16_POSTER_WIDTH_FT = 40 / 12;
 const WALL16_POSTER_HEIGHT_FT = 57 / 12;
 function Wall16Poster() {
-  const texture = useTexture("/textures/deadpool-poster-big.png");
+  const texture = useTexture("/textures/deadpool-poster-big.png?v=srgb1");
   useMemo(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
   }, [texture]);
@@ -1781,12 +1820,16 @@ function LightSwitchPlate({ position }: { position: [number, number, number] }) 
 export function WalkthroughScene({
   lightMode,
   lightIntensity,
+  fov,
+  eyeHeight,
   onNearSwitchChange,
   touchMoveInput,
   touchLookDelta,
 }: {
   lightMode: "warm" | "white";
   lightIntensity: number;
+  fov: number;
+  eyeHeight: number;
   onNearSwitchChange: (near: boolean) => void;
   touchMoveInput?: RefObject<{ x: number; y: number }>;
   touchLookDelta?: RefObject<{ dx: number; dy: number }>;
@@ -1820,7 +1863,7 @@ export function WalkthroughScene({
 
   return (
     <>
-      <SceneSetup />
+      <SceneSetup eyeHeight={eyeHeight} fov={fov} />
       <color attach="background" args={["#c9d3d6"]} />
       {/* No general room lighting by default — Shreyas's call: every
           light in the room is off except the TV/screen glow (added at
@@ -1838,8 +1881,8 @@ export function WalkthroughScene({
       <Beams3D />
       <EntranceThreshold />
       <Wall16Poster />
-      <WallPoster texturePath="/textures/big-wall-poster-2.png" widthFt={POSTER2_WIDTH_FT} centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
-      <WallPoster texturePath="/textures/big-wall-poster-1.png" widthFt={POSTER1_WIDTH_FT} centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
+      <WallPoster texturePath="/textures/big-wall-poster-2.png?v=srgb1" widthFt={POSTER2_WIDTH_FT} centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
+      <WallPoster texturePath="/textures/big-wall-poster-1.png?v=srgb1" widthFt={POSTER1_WIDTH_FT} centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
       <WallPosterSpotlight centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
       <WallPosterSpotlight centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
       {/* Two accent lights on the 16.5ft wall's own two corners, both low
@@ -1924,7 +1967,7 @@ export function WalkthroughScene({
         </RotatedFootprint>
       ))}
 
-      <FirstPersonController eyeHeight={EYE_HEIGHT_FT} speed={WALK_SPEED_FT_PER_SEC} touchMoveInput={touchMoveInput} touchLookDelta={touchLookDelta} />
+      <FirstPersonController eyeHeight={eyeHeight} speed={WALK_SPEED_FT_PER_SEC} touchMoveInput={touchMoveInput} touchLookDelta={touchLookDelta} />
       <PointerLockControls
         onLock={() => (locked.current = true)}
         onUnlock={() => (locked.current = false)}

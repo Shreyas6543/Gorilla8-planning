@@ -1,6 +1,12 @@
 import { WALL_SEGMENTS, OUTER_POLYGON, FLOOR_HEIGHT_FT, BEAMS } from "../config/floorplan";
 
-export const EYE_HEIGHT_FT = 5.5;
+// Defaults only now — both are user-adjustable per browser via the
+// walkthrough's "View settings" panel (see WalkthroughPage.tsx), because
+// what looks life-sized depends on the viewer's own screen size and
+// distance, which this app has no way to know. Don't hardcode these
+// elsewhere; thread the live values through as props instead.
+export const DEFAULT_EYE_HEIGHT_FT = 5.5;
+export const DEFAULT_FOV = 40;
 export const WALK_SPEED_FT_PER_SEC = 6;
 const COLLISION_MARGIN_FT = 1;
 

@@ -47,3 +47,12 @@ create table ledger_entries (
   updated_at timestamptz not null default now()
 );
 alter table ledger_entries disable row level security;
+
+-- Monthly revenue/expense + partner dividend tracking (Finance page). Same
+-- singleton-row jsonb pattern: data = { startingCorpus, months }.
+create table monthly_finance (
+  id text primary key,
+  data jsonb not null,
+  updated_at timestamptz not null default now()
+);
+alter table monthly_finance disable row level security;

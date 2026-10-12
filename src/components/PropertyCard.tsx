@@ -73,9 +73,9 @@ export function PropertyCard({
         </Grid>
         <Grid size={6}>
           <MetricCard
-            label="Invested so far"
+            label="Spent so far"
             value={formatINR(invested, { compact: true })}
-            sublabel="from Expenses page"
+            sublabel="from the Ledger"
             size="sm"
           />
         </Grid>

@@ -9,6 +9,7 @@ const NAV_LINKS = [
   { to: "/", label: "Home" },
   { to: "/expenses", label: "Expenses" },
   { to: "/ledger", label: "Ledger" },
+  { to: "/finance", label: "Finance" },
   { to: "/marketing", label: "Marketing" },
   { to: "/floorplan", label: "Floor Plan" },
   { to: "/design", label: "Design" },
