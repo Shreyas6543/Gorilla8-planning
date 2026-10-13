@@ -240,7 +240,7 @@ export function DesignPage() {
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "background.default", pb: 8 }}>
       <Container maxWidth="lg" sx={{ pt: { xs: 4, md: 6 } }}>
-        <PageHeader subtitle="Drag any piece of furniture to try a different layout, then walk through it in 3D. This is a personal what-if sandbox — it only changes the committed Floor Plan when an admin publishes it." />
+        <PageHeader subtitle="Drag any piece of furniture to try a different layout (it snaps flush to walls and neighbours; use the red × to remove one), then walk through it in 3D. This is a personal what-if sandbox — it only changes the committed Floor Plan when an admin publishes it." />
 
         {isAdmin && (
           <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, borderRadius: 4, mb: 3, border: "1px solid rgba(255,159,67,0.3)" }}>
@@ -374,13 +374,11 @@ export function DesignPage() {
                               </IconButton>
                             </span>
                           </Tooltip>
-                          {isAdmin && (
-                            <Tooltip title="Remove this object">
-                              <IconButton size="small" onClick={() => removeInstance(item.id)} sx={{ color: "#FF6B6B" }}>
-                                <DeleteOutlineIcon fontSize="small" />
-                              </IconButton>
-                            </Tooltip>
-                          )}
+                          <Tooltip title="Remove this object (Ctrl+Z to undo)">
+                            <IconButton size="small" onClick={() => removeInstance(item.id)} sx={{ color: "#FF6B6B" }}>
+                              <DeleteOutlineIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
                         </Stack>
                       </Stack>
                       <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>

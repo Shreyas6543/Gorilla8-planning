@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { PROPERTIES, totalCapitalPool } from "../config/properties";
-import { loadExpenseState, getRow, rowFinalTotal } from "./expenses";
-import { loadExpenseCatalog } from "./expenseCatalog";
+import { loadLedger } from "./ledger";
 
-// "Invested" here means actual money committed — the sum of Final (ordered)
-// line-item totals on the Expenses page, not the planning-stage Expected
-// total. Total capital is the fixed ₹20L pool from config; remaining is
-// whatever's left of it. Both Home and Expenses pages read this so neither
-// one shows a stale hardcoded figure while the other tracks real spend.
+// "Invested" = total spent so far, per the Ledger — Shreyas's actual
+// day-to-day record of money spent (the initial, pre-launch expenses).
+// Once the venue launches, ongoing costs are tracked as monthly entries on
+// the Finance page instead, so the Ledger total stops growing and this
+// figure settles — it does not double-count Finance's monthly expenses.
+// Total capital is the fixed ₹20L pool from config; remaining capital is
+// whatever's left of it (total pool minus the Ledger total), and is also
+// the corpus's base figure on the Finance page. Home and Finance both read
+// this hook so there's one definition of "remaining capital," not two.
 export interface CapitalStatus {
   loaded: boolean;
   totalCapital: number;
@@ -21,9 +24,9 @@ export function useCapitalStatus(): CapitalStatus {
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([loadExpenseState(), loadExpenseCatalog()]).then(([state, catalog]) => {
+    loadLedger().then((entries) => {
       if (cancelled) return;
-      const total = catalog.items.reduce((sum, item) => sum + rowFinalTotal(getRow(state, item.id), "small"), 0);
+      const total = entries.reduce((sum, e) => sum + e.amount, 0);
       setInvested(total);
       setLoaded(true);
     });

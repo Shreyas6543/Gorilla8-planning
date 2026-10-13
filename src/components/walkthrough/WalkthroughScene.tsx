@@ -4,10 +4,11 @@ import * as THREE from "three";
 import { PointerLockControls, useGLTF, useTexture, Text } from "@react-three/drei";
 import { EffectComposer, Bloom, N8AO, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
-import { buildWalls, isInsideRoom, EYE_HEIGHT_FT, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
+import { buildWalls, isInsideRoom, WALK_SPEED_FT_PER_SEC } from "../../lib/room3d";
 import { OUTER_POLYGON, BEAMS, ENTRANCE, GLASS_WALL } from "../../config/floorplan";
 import { footprint, type FurnitureItem } from "../../config/layout";
 import { BUILTIN_CATALOG } from "../../lib/furnitureCatalog";
+import { kitchenDims } from "../../lib/kitchenGeometry";
 import { FirstPersonController } from "./FirstPersonController";
 import { useFurnitureLayout } from "../../state/furnitureLayout";
 
@@ -48,12 +49,21 @@ const SKIRTING_HEIGHT = 0.5;
 const START_X = (ENTRANCE.from[0] + ENTRANCE.to[0]) / 2;
 const START_Z = ENTRANCE.from[1] + 2; // just inside the doorway
 
-function SceneSetup() {
+function SceneSetup({ eyeHeight, fov }: { eyeHeight: number; fov: number }) {
   const { camera } = useThree();
   useEffect(() => {
-    camera.position.set(START_X, EYE_HEIGHT_FT, START_Z);
-    camera.lookAt(START_X, EYE_HEIGHT_FT, START_Z + 10); // face into the room
-  }, [camera]);
+    camera.position.set(START_X, eyeHeight, START_Z);
+    camera.lookAt(START_X, eyeHeight, START_Z + 10); // face into the room
+  }, [camera, eyeHeight]);
+  // Keeps the live camera's fov in sync with the "View settings" slider —
+  // a belt-and-braces update alongside the fov passed to <Canvas camera=...>,
+  // since that prop is only guaranteed applied on the camera's creation.
+  useEffect(() => {
+    if (camera instanceof THREE.PerspectiveCamera) {
+      camera.fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }, [camera, fov]);
   return null;
 }
 
@@ -99,7 +109,23 @@ function Walls() {
             {w.isGlass ? (
               // Ad stickers on the outside face + a grey privacy film means
               // only ~10% of outside light actually makes it through.
-              <meshPhysicalMaterial color={GLASS_COLOR} roughness={0.35} transmission={0.1} opacity={1} />
+              // Two things were tried here and both washed this out to a
+              // bright white/grey sheen instead of a dark tint:
+              // (1) physically-based `transmission` — it renders through its
+              //     own separate render target, which conflicts with the
+              //     EffectComposer post-processing stack below (Bloom/N8AO/
+              //     ToneMapping), a known three.js/r3f incompatibility.
+              // (2) `meshPhysicalMaterial` even WITHOUT transmission — it
+              //     still carries a stronger default specular/IOR response
+              //     than `meshStandardMaterial`, and at roughness 0.35 that
+              //     glossy highlight (from ordinary scene lights) blooms out
+              //     to a broad white glow — same Bloom effect, different
+              //     cause. The opaque walls right below use
+              //     `meshStandardMaterial` at a much higher (matte)
+              //     roughness and render correctly dark, so this now matches
+              //     that exact material/roughness, just with opacity added
+              //     for the slight see-through.
+              <meshStandardMaterial color={GLASS_COLOR} roughness={0.85} transparent opacity={0.9} />
             ) : (
               <meshStandardMaterial color={WALL_COLOR} roughness={0.92} />
             )}
@@ -983,6 +1009,21 @@ function AimedSpotLight({
   }, []);
   return (
     <>
+      {/* No castShadow: every current caller aims this at a flat surface
+          (a poster, a portrait, a bare wall wash) with nothing between the
+          fixture and what it's lighting, so a shadow map buys nothing
+          visually. It costs a lot, though — each shadow-casting light needs
+          its own shadow-map texture unit, and with 7 of these in the scene
+          (4 CornerAccentLight + 2 WallPosterSpotlight + 1 sofa gallery
+          light) plus the 3 pool table lights, that pushed any *textured*
+          lit material (map + standard lighting — the wall posters, the
+          sofa's gallery portraits) over WebGL's MAX_TEXTURE_IMAGE_UNITS(16),
+          which fails that material's shader compile and renders it solid
+          black. Plain-color materials (no map) stayed just under the limit,
+          which is why only textured surfaces broke. If a future AimedSpotLight
+          use case actually needs a shadow (something 3D standing between the
+          fixture and its target), pass it as a new optional prop — don't
+          make it the default again. */}
       <spotLight
         ref={lightRef}
         position={position}
@@ -992,7 +1033,6 @@ function AimedSpotLight({
         intensity={intensity}
         decay={decay}
         color={color}
-        castShadow
       />
       <object3D ref={targetRef} position={target} />
     </>
@@ -1090,9 +1130,9 @@ function SofaUnit({ x, y, width, height, elevation }: { x: number; y: number; wi
   // ones Shreyas added ("minion deadpool 1/2") flank it, same physical
   // frame size, same wall height — a straight gallery row.
   const [centerTexture, leftTexture, rightTexture] = useTexture([
-    "/textures/deadpool-poster.png",
+    "/textures/deadpool-poster.png?v=srgb1",
     "/textures/minion-deadpool-1.png",
-    "/textures/minion-deadpool-2.png",
+    "/textures/minion-deadpool-2.png?v=srgb1",
   ]);
   useMemo(() => {
     [centerTexture, leftTexture, rightTexture].forEach((t) => {
@@ -1183,6 +1223,354 @@ function PlantPot({ x, y, width, height, elevation }: { x: number; y: number; wi
   );
 }
 
+// ─── Kitchen ────────────────────────────────────────────────────────────
+// Corner kitchen kiosk — see lib/kitchenGeometry.ts for the layout rules.
+// Two solid walls (north/west, meant to sit in a room corner) and two open
+// faces (south/east). Each open face is built by <KitchenFace> in its own
+// frame: origin at the outer edge of the face, +Z pointing out into the
+// room, X running along the face. From the outside in: red/white awning,
+// service window (1ft of solid wall at each end), fluted dark counter
+// front with a slab on top and warm LED strips — the same treatment as the
+// reception counter — then the tiled kitchen interior behind.
+const KITCHEN_RED = "#C62828";
+const KITCHEN_WHITE = "#F4F1EA";
+const KITCHEN_STEEL = "#A7B0B8";
+const KITCHEN_WALL_COLOR = "#1B1816";
+const KITCHEN_COUNTER_H = 3.4;
+
+// Subway-tile texture, 1ft x 0.5ft per tile, repeated across a surface.
+function useTileTexture(spanFt: number, heightFt: number): THREE.Texture {
+  return useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 128;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    ctx.fillStyle = "#ECEBE6";
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.strokeStyle = "#B4B6B0";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(0, 0, 128, 64);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(Math.max(1, spanFt), Math.max(1, heightFt * 2));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }, [spanFt, heightFt]);
+}
+
+// Shop-front awning: sloped red/white stripes, a straight valance, and a
+// scalloped edge. Local frame: x along the awning (centred), +Z outward,
+// y absolute; the top edge is attached to the wall at z = 0.
+function KitchenAwning({ length, projection, yTop, yEave }: { length: number; projection: number; yTop: number; yEave: number }) {
+  const drop = 0.45;
+  const stripeCount = Math.max(2, 2 * Math.round(length / 1.0)); // even, ~0.5ft each
+  const sw = length / stripeCount;
+  const rise = yTop - yEave;
+  const slopeLen = Math.hypot(projection, rise);
+  const tilt = Math.atan2(rise, projection); // +x rotation lowers the far (+z) end
+  return (
+    <group>
+      {Array.from({ length: stripeCount }, (_, i) => {
+        const cx = -length / 2 + sw * (i + 0.5);
+        const red = i % 2 === 0;
+        const color = red ? KITCHEN_RED : KITCHEN_WHITE;
+        const emissive = red ? "#7a0f0f" : "#ffffff";
+        const emissiveIntensity = red ? 0.2 : 0.14;
+        return (
+          <group key={i}>
+            <mesh position={[cx, (yTop + yEave) / 2, projection / 2]} rotation={[tilt, 0, 0]} castShadow>
+              <boxGeometry args={[sw * 0.995, 0.04, slopeLen]} />
+              <meshStandardMaterial color={color} roughness={0.85} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+            </mesh>
+            <mesh position={[cx, yEave - drop / 2, projection]}>
+              <boxGeometry args={[sw * 0.995, drop, 0.03]} />
+              <meshStandardMaterial color={color} roughness={0.85} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+            </mesh>
+            {/* Scalloped lower edge: a half-disc hanging off each stripe */}
+            <mesh position={[cx, yEave - drop, projection + 0.002]}>
+              <circleGeometry args={[sw / 2, 20, Math.PI, Math.PI]} />
+              <meshStandardMaterial color={color} roughness={0.85} emissive={emissive} emissiveIntensity={emissiveIntensity} side={THREE.DoubleSide} />
+            </mesh>
+          </group>
+        );
+      })}
+      {/* Thin support arms at each end, wall to eave */}
+      {[-length / 2 + 0.03, length / 2 - 0.03].map((ax) => (
+        <mesh key={ax} position={[ax, (yTop + yEave) / 2 - 0.03, projection / 2]} rotation={[tilt, 0, 0]}>
+          <boxGeometry args={[0.05, 0.05, slopeLen]} />
+          <meshStandardMaterial color="#141416" metalness={0.5} roughness={0.4} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+function KitchenFace({
+  length, // full face length, incl. the counter's corner block
+  cornerSign, // which local-x end is the room-side corner where the two open faces meet
+  slab,
+  wallT,
+  margin,
+  height,
+  openTop,
+}: {
+  length: number;
+  cornerSign: 1 | -1;
+  slab: number;
+  wallT: number;
+  margin: number;
+  height: number;
+  openTop: number;
+}) {
+  const logo = useTexture("/textures/gorilla8-logo.png");
+  useMemo(() => {
+    logo.colorSpace = THREE.SRGBColorSpace;
+  }, [logo]);
+
+  const Hc = KITCHEN_COUNTER_H;
+  const wallLen = length - slab; // the wall stops where the perpendicular counter begins
+  const wallCx = (-cornerSign * slab) / 2;
+  const wallZ = -slab - wallT / 2; // wall centre plane (just behind the counter)
+  const openLen = wallLen - 2 * margin;
+  const openCx = wallCx;
+
+  // Counter front: reeded/fluted dark wood, matching the reception counter.
+  const ridgeCount = Math.max(8, Math.round(length / 0.18));
+  const ridgeSpacing = length / ridgeCount;
+  const ridgeHeight = Hc - 0.7;
+
+  // Sign band above the window.
+  const signBottom = openTop + 0.75;
+  const signH = height - 0.12 - signBottom;
+  const signCy = signBottom + signH / 2;
+  const showSign = signH > 0.55 && openLen > 3;
+  const logoSize = Math.min(signH * 0.95, 1.4);
+  const textLeft = openCx - openLen / 2 + logoSize + 0.35;
+  const textW = openLen - logoSize - 0.6;
+
+  const pendantCount = Math.max(1, Math.min(4, Math.floor(openLen / 2.4)));
+
+  return (
+    <group>
+      {/* Counter base + fluted front */}
+      <mesh position={[0, Hc / 2, -slab / 2]} castShadow>
+        <boxGeometry args={[length, Hc, slab]} />
+        <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.55} />
+      </mesh>
+      {Array.from({ length: ridgeCount }, (_, i) => (
+        <mesh key={i} position={[-length / 2 + ridgeSpacing * (i + 0.5), Hc / 2, 0]}>
+          <cylinderGeometry args={[0.045, 0.045, ridgeHeight, 8]} />
+          <meshStandardMaterial color={COUNTER_BODY_COLOR} roughness={0.4} metalness={0.05} emissive={COUNTER_LED_COLOR} emissiveIntensity={0.12} />
+        </mesh>
+      ))}
+      {/* Counter slab, overhanging the front a touch */}
+      <mesh position={[0, Hc + 0.07, -(slab - 0.14) / 2]} castShadow>
+        <boxGeometry args={[length, 0.14, slab + 0.14]} />
+        <meshStandardMaterial color={COUNTER_TOP_COLOR} roughness={0.3} metalness={0.08} />
+      </mesh>
+      {/* Warm LED strips: under the slab lip and along the floor (emissive only — Bloom sells the glow) */}
+      {[Hc - 0.03, 0.06].map((sy) => (
+        <mesh key={sy} position={[0, sy, 0.03]}>
+          <boxGeometry args={[length, 0.04, 0.05]} />
+          <meshBasicMaterial color={COUNTER_LED_COLOR} toneMapped={false} />
+        </mesh>
+      ))}
+
+      {/* Kitchen wall behind the counter: solid posts, solid below the window and above it */}
+      <mesh position={[wallCx, Hc / 2, wallZ]}>
+        <boxGeometry args={[wallLen, Hc, wallT]} />
+        <meshStandardMaterial color={KITCHEN_WALL_COLOR} roughness={0.7} />
+      </mesh>
+      {[-1, 1].map((side) => (
+        <mesh key={side} position={[wallCx + side * (wallLen / 2 - margin / 2), height / 2, wallZ]} castShadow>
+          <boxGeometry args={[margin, height, wallT]} />
+          <meshStandardMaterial color={KITCHEN_WALL_COLOR} roughness={0.7} />
+        </mesh>
+      ))}
+      <mesh position={[wallCx, (openTop + height) / 2, wallZ]} castShadow>
+        <boxGeometry args={[openLen, height - openTop, wallT]} />
+        <meshStandardMaterial color={KITCHEN_WALL_COLOR} roughness={0.7} />
+      </mesh>
+      {/* Steel sill at the bottom of the window */}
+      <mesh position={[openCx, Hc + 0.01, wallZ]}>
+        <boxGeometry args={[openLen, 0.03, wallT + 0.02]} />
+        <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.7} roughness={0.35} />
+      </mesh>
+
+      {/* Sign band: gorilla logo + KITCHEN + menu line */}
+      {showSign && (
+        <group position={[0, 0, -slab + 0.03]}>
+          <mesh position={[textLeft - logoSize / 2 - 0.1, signCy, 0]}>
+            <planeGeometry args={[logoSize, logoSize]} />
+            <meshBasicMaterial map={logo} toneMapped={false} transparent />
+          </mesh>
+          <Text
+            position={[textLeft + textW / 2, signCy + signH * 0.22, 0.005]}
+            fontSize={Math.min(signH * 0.4, textW / 5)}
+            color="#FFD9A0"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={textW}
+          >
+            KITCHEN
+          </Text>
+          {/* Menu on two deliberate lines — one long line wraps badly on a narrow sign */}
+          <Text
+            position={[textLeft + textW / 2, signCy - signH * 0.2, 0.005]}
+            fontSize={Math.min(signH * 0.17, textW / 9.5)}
+            lineHeight={1.15}
+            textAlign="center"
+            color="#F4F1EA"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={textW}
+          >
+            {"BURGERS · FRIES\nWINGS · DRINKS"}
+          </Text>
+        </group>
+      )}
+
+      {/* Striped awning over the window, attached to the wall's outer face */}
+      <group position={[wallCx, 0, -slab]}>
+        <KitchenAwning length={wallLen} projection={slab + 0.45} yTop={openTop + 0.55} yEave={openTop - 0.1} />
+      </group>
+
+      {/* Pendant lamps hanging inside the window + one soft warm light */}
+      {Array.from({ length: pendantCount }, (_, i) => {
+        const px = openCx - openLen / 2 + (openLen * (i + 0.5)) / pendantCount;
+        const pz = -slab - wallT - 0.9;
+        const shadeY = openTop - 0.55;
+        return (
+          <group key={i} position={[px, 0, pz]}>
+            <mesh position={[0, (shadeY + height) / 2, 0]}>
+              <cylinderGeometry args={[0.012, 0.012, height - shadeY, 6]} />
+              <meshStandardMaterial color="#141416" />
+            </mesh>
+            <mesh position={[0, shadeY, 0]}>
+              <cylinderGeometry args={[0.1, 0.42, 0.32, 18, 1, true]} />
+              <meshStandardMaterial color="#101012" roughness={0.45} metalness={0.3} side={THREE.DoubleSide} />
+            </mesh>
+            <mesh position={[0, shadeY - 0.1, 0]}>
+              <sphereGeometry args={[0.13, 12, 10]} />
+              <meshBasicMaterial color="#FFDDAA" toneMapped={false} />
+            </mesh>
+          </group>
+        );
+      })}
+      <pointLight position={[openCx, openTop - 0.8, -slab - wallT - 1.3]} intensity={55} distance={11} decay={2} color="#FFC98A" />
+    </group>
+  );
+}
+
+function Kitchen({ x, y, width: W, height: D, elevation: H }: { x: number; y: number; width: number; height: number; elevation: number }) {
+  const { slab: S, wall: T, margin: M } = kitchenDims(W, D);
+  const x0 = x;
+  const x1 = x + W;
+  const z0 = y;
+  const z1 = y + D;
+  const cx = x + W / 2;
+  const cz = y + D / 2;
+  const Hc = KITCHEN_COUNTER_H;
+  const openTop = Math.min(H - 1.2, Math.max(Hc + 2.2, H - 2.0));
+
+  // Interior between the two solid walls and the two open-face walls.
+  const xi0 = x0 + T;
+  const xi1 = x1 - S - T;
+  const zi0 = z0 + T;
+  const zi1 = z1 - S - T;
+  const iw = xi1 - xi0;
+  const id = zi1 - zi0;
+  const showInterior = iw > 3 && id > 3;
+  const tileH = openTop + 0.4;
+  const northTiles = useTileTexture(iw, tileH);
+  const westTiles = useTileTexture(id, tileH);
+
+  const prepDepth = Math.min(2, id * 0.32);
+  const westPrepLen = Math.max(0.5, id - prepDepth);
+  const hoodW = Math.max(1, iw - 0.8);
+
+  return (
+    <group>
+      {/* Solid north + west walls (against the room's walls in a corner) */}
+      <mesh position={[cx, H / 2, z0 + T / 2]} castShadow>
+        <boxGeometry args={[W, H, T]} />
+        <meshStandardMaterial color={KITCHEN_WALL_COLOR} roughness={0.7} />
+      </mesh>
+      <mesh position={[x0 + T / 2, H / 2, (z0 + T + z1) / 2]} castShadow>
+        <boxGeometry args={[T, H, D - T]} />
+        <meshStandardMaterial color={KITCHEN_WALL_COLOR} roughness={0.7} />
+      </mesh>
+      {/* Roof / fascia */}
+      <mesh position={[cx, H - 0.1, cz]} castShadow>
+        <boxGeometry args={[W, 0.2, D]} />
+        <meshStandardMaterial color={COUNTER_TOP_COLOR} roughness={0.5} />
+      </mesh>
+
+      {/* Two open faces. South: frame at the outer edge, +Z outward, x along x. East: turned to face +X. */}
+      <group position={[cx, 0, z1]}>
+        <KitchenFace length={W} cornerSign={1} slab={S} wallT={T} margin={M} height={H} openTop={openTop} />
+      </group>
+      <group position={[x1, 0, cz]} rotation={[0, Math.PI / 2, 0]}>
+        <KitchenFace length={D} cornerSign={-1} slab={S} wallT={T} margin={M} height={H} openTop={openTop} />
+      </group>
+
+      {/* Interior: floor, tiled back walls, stainless prep counters, hood, shelves */}
+      {showInterior && (
+        <group>
+          <mesh position={[(xi0 + xi1) / 2, 0.02, (zi0 + zi1) / 2]} receiveShadow>
+            <boxGeometry args={[iw, 0.04, id]} />
+            <meshStandardMaterial color="#2A2A2E" roughness={0.6} />
+          </mesh>
+          <mesh position={[(xi0 + xi1) / 2, tileH / 2, zi0 + 0.01]}>
+            <planeGeometry args={[iw, tileH]} />
+            <meshStandardMaterial map={northTiles} roughness={0.3} />
+          </mesh>
+          <mesh position={[xi0 + 0.01, tileH / 2, (zi0 + zi1) / 2]} rotation={[0, Math.PI / 2, 0]}>
+            <planeGeometry args={[id, tileH]} />
+            <meshStandardMaterial map={westTiles} roughness={0.3} />
+          </mesh>
+
+          {/* Prep counters along the north and west walls */}
+          <mesh position={[(xi0 + xi1) / 2, 1.5, zi0 + prepDepth / 2]} castShadow>
+            <boxGeometry args={[iw, 3, prepDepth]} />
+            <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.7} roughness={0.35} />
+          </mesh>
+          <mesh position={[xi0 + prepDepth / 2, 1.5, zi0 + prepDepth + westPrepLen / 2]} castShadow>
+            <boxGeometry args={[prepDepth, 3, westPrepLen]} />
+            <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.7} roughness={0.35} />
+          </mesh>
+
+          {/* Extraction hood + duct over the north counter */}
+          <mesh position={[(xi0 + xi1) / 2, openTop - 0.7, zi0 + prepDepth / 2 + 0.2]} castShadow>
+            <boxGeometry args={[hoodW, 0.8, prepDepth + 0.4]} />
+            <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.8} roughness={0.3} />
+          </mesh>
+          <mesh position={[(xi0 + xi1) / 2, (openTop - 0.3 + H) / 2, zi0 + 0.7]}>
+            <boxGeometry args={[1.1, H - openTop + 0.3, 1.1]} />
+            <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.8} roughness={0.35} />
+          </mesh>
+
+          {/* Two open shelves on the west wall, with a few pots and jars */}
+          {[4.3, 5.5].map((sy, row) => (
+            <group key={sy}>
+              <mesh position={[xi0 + 0.4, sy, zi0 + prepDepth + westPrepLen / 2]}>
+                <boxGeometry args={[0.7, 0.05, Math.max(0.5, westPrepLen - 0.4)]} />
+                <meshStandardMaterial color={KITCHEN_STEEL} metalness={0.7} roughness={0.35} />
+              </mesh>
+              {Array.from({ length: Math.max(2, Math.floor(westPrepLen / 0.9)) }, (_, k) => (
+                <mesh key={k} position={[xi0 + 0.4, sy + 0.2, zi0 + prepDepth + 0.35 + k * 0.9]}>
+                  <cylinderGeometry args={[0.16 + (k % 2) * 0.05, 0.16 + (k % 2) * 0.05, 0.36 - (row % 2) * 0.08, 12]} />
+                  <meshStandardMaterial color={k % 3 === 0 ? "#8a8f95" : k % 3 === 1 ? "#C62828" : "#d8d3c8"} metalness={0.3} roughness={0.5} />
+                </mesh>
+              ))}
+            </group>
+          ))}
+        </group>
+      )}
+    </group>
+  );
+}
+
 // GORILLA 8 neon sign, mounted on the glass wall directly behind the
 // counter (the counter's back edge sits right up against it — only 0.2ft
 // gap) at Shreyas's specced height and size. The source image is already
@@ -1235,7 +1623,7 @@ function EntranceThreshold() {
 const WALL16_POSTER_WIDTH_FT = 40 / 12;
 const WALL16_POSTER_HEIGHT_FT = 57 / 12;
 function Wall16Poster() {
-  const texture = useTexture("/textures/deadpool-poster-big.png");
+  const texture = useTexture("/textures/deadpool-poster-big.png?v=srgb1");
   useMemo(() => {
     texture.colorSpace = THREE.SRGBColorSpace;
   }, [texture]);
@@ -1432,12 +1820,16 @@ function LightSwitchPlate({ position }: { position: [number, number, number] }) 
 export function WalkthroughScene({
   lightMode,
   lightIntensity,
+  fov,
+  eyeHeight,
   onNearSwitchChange,
   touchMoveInput,
   touchLookDelta,
 }: {
   lightMode: "warm" | "white";
   lightIntensity: number;
+  fov: number;
+  eyeHeight: number;
   onNearSwitchChange: (near: boolean) => void;
   touchMoveInput?: RefObject<{ x: number; y: number }>;
   touchLookDelta?: RefObject<{ dx: number; dy: number }>;
@@ -1451,6 +1843,7 @@ export function WalkthroughScene({
   const cabinets = items.filter((i) => i.renderType === "cabinet");
   const sofaUnits = items.filter((i) => i.renderType === "sofaUnit");
   const plantPots = items.filter((i) => i.renderType === "plantPot");
+  const kitchens = items.filter((i) => i.renderType === "kitchen");
   const generics = items.filter((i) => i.renderType === "generic");
   // Logo mounts behind whichever item is actually the counter right now —
   // reads its live position (Design page), not the hardcoded default,
@@ -1470,7 +1863,7 @@ export function WalkthroughScene({
 
   return (
     <>
-      <SceneSetup />
+      <SceneSetup eyeHeight={eyeHeight} fov={fov} />
       <color attach="background" args={["#c9d3d6"]} />
       {/* No general room lighting by default — Shreyas's call: every
           light in the room is off except the TV/screen glow (added at
@@ -1488,8 +1881,8 @@ export function WalkthroughScene({
       <Beams3D />
       <EntranceThreshold />
       <Wall16Poster />
-      <WallPoster texturePath="/textures/big-wall-poster-2.png" widthFt={POSTER2_WIDTH_FT} centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
-      <WallPoster texturePath="/textures/big-wall-poster-1.png" widthFt={POSTER1_WIDTH_FT} centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
+      <WallPoster texturePath="/textures/big-wall-poster-2.png?v=srgb1" widthFt={POSTER2_WIDTH_FT} centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
+      <WallPoster texturePath="/textures/big-wall-poster-1.png?v=srgb1" widthFt={POSTER1_WIDTH_FT} centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
       <WallPosterSpotlight centerZ={POSTER2_CENTER_Z} centerY={POSTER2_CENTER_Y} />
       <WallPosterSpotlight centerZ={POSTER1_CENTER_Z} centerY={POSTER1_CENTER_Y} />
       {/* Two accent lights on the 16.5ft wall's own two corners, both low
@@ -1561,6 +1954,11 @@ export function WalkthroughScene({
           {(x, y) => <PlantPot x={x} y={y} width={p.width} height={p.height} elevation={p.elevation} />}
         </RotatedFootprint>
       ))}
+      {kitchens.map((k) => (
+        <RotatedFootprint key={k.id} item={k}>
+          {(x, y) => <Kitchen x={x} y={y} width={k.width} height={k.height} elevation={k.elevation} />}
+        </RotatedFootprint>
+      ))}
       {generics.map((g) => (
         <RotatedFootprint key={g.id} item={g}>
           {(x, y) => (
@@ -1569,7 +1967,7 @@ export function WalkthroughScene({
         </RotatedFootprint>
       ))}
 
-      <FirstPersonController eyeHeight={EYE_HEIGHT_FT} speed={WALK_SPEED_FT_PER_SEC} touchMoveInput={touchMoveInput} touchLookDelta={touchLookDelta} />
+      <FirstPersonController eyeHeight={eyeHeight} speed={WALK_SPEED_FT_PER_SEC} touchMoveInput={touchMoveInput} touchLookDelta={touchLookDelta} />
       <PointerLockControls
         onLock={() => (locked.current = true)}
         onUnlock={() => (locked.current = false)}

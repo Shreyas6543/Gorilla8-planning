@@ -73,9 +73,9 @@ export function PropertyCard({
         </Grid>
         <Grid size={6}>
           <MetricCard
-            label="Invested so far"
+            label="Spent so far"
             value={formatINR(invested, { compact: true })}
-            sublabel="from Expenses page"
+            sublabel="from the Ledger"
             size="sm"
           />
         </Grid>
@@ -99,8 +99,8 @@ export function PropertyCard({
       <Divider sx={{ my: 2 }} />
 
       <Stack direction="row" spacing={1} sx={{ mb: 2, flexWrap: "wrap", gap: 1 }}>
-        <Chip label={`🎱 Pool ${capacityLabel(property.minPool, property.maxPool)}`} size="small" variant="outlined" />
-        <Chip label={`🎮 PS5 ${capacityLabel(property.minPs5, property.maxPs5)}`} size="small" variant="outlined" />
+        <Chip label={`🎱 Pool ${pool}`} size="small" variant="outlined" />
+        <Chip label={`🎮 PS5 ${ps5}`} size="small" variant="outlined" />
         <Chip
           label={`🟤 Carrom ${capacityLabel(property.minCarrom, property.maxCarrom)}`}
           size="small"

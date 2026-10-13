@@ -2,6 +2,7 @@ import { Box } from "@mui/material";
 import { OUTER_POLYGON, WALL_SEGMENTS, ENTRANCE, GLASS_WALL, BEAMS } from "../config/floorplan";
 import { POOL_TABLES, POOL_CLUSTER_CLEARANCE, PS5_STATIONS, RACING_SIM, COUNTER, CABINET, footprint, type FurnitureItem } from "../config/layout";
 import type { RenderType } from "../lib/furnitureCatalog";
+import { KitchenMarks } from "./KitchenMarks";
 
 const DEFAULT_FURNITURE: FurnitureItem[] = [...POOL_TABLES, ...PS5_STATIONS, RACING_SIM, COUNTER, CABINET];
 
@@ -15,6 +16,7 @@ const TYPE_STYLE: Record<RenderType, { fill: string; stroke: string; textFill: s
   cabinet: { fill: "rgba(184,138,74,0.3)", stroke: "#B88A4A", textFill: "#F2F4F7", fontSize: 0.55 },
   sofaUnit: { fill: "rgba(122,44,32,0.3)", stroke: "#7A2C20", textFill: "#F2F4F7", fontSize: 0.55 },
   plantPot: { fill: "rgba(46,125,50,0.3)", stroke: "#2E7D32", textFill: "#F2F4F7", fontSize: 0.5 },
+  kitchen: { fill: "rgba(229,57,53,0.16)", stroke: "#E53935", textFill: "#F2F4F7", fontSize: 0.8 },
   generic: GENERIC_STYLE,
 };
 
@@ -26,6 +28,7 @@ const TYPE_DISPLAY_LABEL: Record<RenderType, string | null> = {
   cabinet: "CABINET",
   sofaUnit: "SOFA UNIT",
   plantPot: "PLANT POT",
+  kitchen: "KITCHEN",
   generic: null, // uses the item's own label
 };
 
@@ -189,6 +192,7 @@ export function FloorPlanSvg({ showFurniture = false, items = DEFAULT_FURNITURE 
               return (
                 <g key={item.id}>
                   <rect x={item.x} y={item.y} width={foot.w} height={foot.h} fill={fill} stroke={stroke} strokeWidth={0.12} />
+                  {item.renderType === "kitchen" && <KitchenMarks item={item} />}
                   <text
                     x={cx}
                     y={cy}

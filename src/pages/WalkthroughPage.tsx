@@ -4,10 +4,42 @@ import { Canvas } from "@react-three/fiber";
 import { Link as RouterLink } from "react-router-dom";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { WalkthroughScene } from "../components/walkthrough/WalkthroughScene";
+import { DEFAULT_EYE_HEIGHT_FT, DEFAULT_FOV } from "../lib/room3d";
 import { useIsTouchDevice, useIsLandscape, tryLockLandscape, VirtualJoystick, TouchLookArea } from "../components/walkthrough/MobileControls";
+
+const VIEW_KEY = "gorilla8-walkthrough-view-v1";
+
+function loadViewSettings(): { fov: number; eyeHeight: number } {
+  try {
+    const raw = localStorage.getItem(VIEW_KEY);
+    if (!raw) return { fov: DEFAULT_FOV, eyeHeight: DEFAULT_EYE_HEIGHT_FT };
+    const parsed = JSON.parse(raw) as Partial<{ fov: number; eyeHeight: number }>;
+    return {
+      fov: typeof parsed.fov === "number" ? parsed.fov : DEFAULT_FOV,
+      eyeHeight: typeof parsed.eyeHeight === "number" ? parsed.eyeHeight : DEFAULT_EYE_HEIGHT_FT,
+    };
+  } catch {
+    return { fov: DEFAULT_FOV, eyeHeight: DEFAULT_EYE_HEIGHT_FT };
+  }
+}
 
 export function WalkthroughPage() {
   const [locked, setLocked] = useState(false);
+  // How big the room/furniture look is inherently viewer-dependent — it
+  // depends on your actual screen size and how far you sit from it, which
+  // this app has no way to know. Rather than chase one "correct" FOV for
+  // everyone (already tried 75 -> 55 -> 40, still wrong for some setups),
+  // this is a personal, per-browser calibration you tune once and it's
+  // remembered — same "local only, not synced" rule as the Design sandbox.
+  const [viewOpen, setViewOpen] = useState(false);
+  const [view, setView] = useState(loadViewSettings);
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, JSON.stringify(view));
+    } catch {
+      // best-effort only
+    }
+  }, [view]);
   const [nearSwitch, setNearSwitch] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
   const [lightMode, setLightMode] = useState<"warm" | "white">("warm");
@@ -51,19 +83,18 @@ export function WalkthroughPage() {
 
   return (
     <Box sx={{ width: "100vw", height: "100vh", position: "relative", bgcolor: "#0B0D10", overflow: "hidden" }}>
-      {/* fov 40 (was 75, then 55 — both still too wide). Perspective only
-          looks life-sized when the camera's vertical FOV roughly matches
-          the angle the monitor actually subtends at the viewer's eye —
-          sitting ~2ft from a ~14in-tall screen that's only ~33°. Anything
-          wider crams more room into the same pixels, which is what made
-          the portrait, the pool tables and the gaps between them all read
-          smaller than they measure. 40 stays close to that geometric
-          ideal while keeping enough peripheral view to walk around with. */}
-      <Canvas shadows camera={{ fov: 40, near: 0.1, far: 200 }}>
+      {/* No single FOV looks life-sized for everyone — it depends on the
+          viewer's actual screen size and distance, which the app can't
+          know (already tried 75 -> 55 -> 40 as one-size-fits-all and it
+          still read too spacious for some setups). fov/eyeHeight are now
+          a personal per-browser setting instead — see "View settings". */}
+      <Canvas shadows camera={{ fov: view.fov, near: 0.1, far: 200 }}>
         <Suspense fallback={null}>
           <WalkthroughScene
             lightMode={lightMode}
             lightIntensity={lightIntensity}
+            fov={view.fov}
+            eyeHeight={view.eyeHeight}
             onNearSwitchChange={setNearSwitch}
             touchMoveInput={isTouch ? touchMoveInput : undefined}
             touchLookDelta={isTouch ? touchLookDelta : undefined}
@@ -94,6 +125,20 @@ export function WalkthroughPage() {
           sx={{ color: "#04140a", bgcolor: "rgba(255,255,255,0.9)", "&:hover": { bgcolor: "#fff" } }}
         >
           Back to floor plan
+        </Button>
+      </Box>
+
+      <Box sx={{ position: "absolute", top: 16, right: 16, zIndex: 10 }}>
+        <Button
+          size="small"
+          variant="contained"
+          onClick={() => {
+            setViewOpen(true);
+            if (document.pointerLockElement) document.exitPointerLock();
+          }}
+          sx={{ color: "#04140a", bgcolor: "rgba(255,255,255,0.9)", "&:hover": { bgcolor: "#fff" } }}
+        >
+          View settings
         </Button>
       </Box>
 
@@ -227,6 +272,45 @@ export function WalkthroughPage() {
           )}
         </Box>
       )}
+
+      <Dialog open={viewOpen} onClose={() => setViewOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>View settings</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+            How big the room looks depends on your own screen and how far you sit from it — tune these until it looks life-sized to you. Remembered on this device.
+          </Typography>
+          <Typography sx={{ mt: 2, mb: 1 }} variant="body2" color="text.secondary">
+            Field of view ({view.fov}°)
+          </Typography>
+          <Slider
+            value={view.fov}
+            onChange={(_, v) => setView((s) => ({ ...s, fov: v as number }))}
+            min={25}
+            max={65}
+            step={1}
+            valueLabelDisplay="auto"
+          />
+          <Typography sx={{ mt: 2, mb: 1 }} variant="body2" color="text.secondary">
+            Eye height ({view.eyeHeight.toFixed(1)} ft)
+          </Typography>
+          <Slider
+            value={view.eyeHeight}
+            onChange={(_, v) => setView((s) => ({ ...s, eyeHeight: v as number }))}
+            min={4.5}
+            max={6.5}
+            step={0.1}
+            valueLabelDisplay="auto"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setView({ fov: DEFAULT_FOV, eyeHeight: DEFAULT_EYE_HEIGHT_FT })} sx={{ color: "text.secondary" }}>
+            Reset to default
+          </Button>
+          <Button onClick={() => setViewOpen(false)} variant="contained" sx={{ color: "#04140a" }}>
+            Done
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={switchOpen} onClose={() => setSwitchOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Light switch</DialogTitle>
