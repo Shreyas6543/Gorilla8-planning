@@ -56,3 +56,21 @@ create table monthly_finance (
   updated_at timestamptz not null default now()
 );
 alter table monthly_finance disable row level security;
+
+-- QR banner scan log (QR Scans page). One row per scan — append-only event
+-- log, NOT a singleton jsonb blob like the tables above. Written by the
+-- api/qr/[banner].ts serverless redirect function (anon key, server-side),
+-- read by src/lib/qrScans.ts for the dashboard page.
+create table qr_scans (
+  id bigint generated always as identity primary key,
+  banner_id text not null, -- e.g. 'shop', 'others' — whatever slug the physical banner's QR encodes
+  scanned_at timestamptz not null default now(),
+  city text,
+  region text,
+  country text,
+  user_agent text,
+  referrer text
+);
+alter table qr_scans disable row level security;
+create index qr_scans_banner_id_idx on qr_scans (banner_id);
+create index qr_scans_scanned_at_idx on qr_scans (scanned_at);

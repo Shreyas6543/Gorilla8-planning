@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { to: "/marketing", label: "Marketing" },
   { to: "/floorplan", label: "Floor Plan" },
   { to: "/design", label: "Design" },
+  { to: "/qr-scans", label: "QR Scans" },
 ];
 
 const TAP_COUNT_REQUIRED = 5;
