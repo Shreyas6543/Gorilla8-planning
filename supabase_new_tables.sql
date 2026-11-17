@@ -74,3 +74,28 @@ create table qr_scans (
 alter table qr_scans disable row level security;
 create index qr_scans_banner_id_idx on qr_scans (banner_id);
 create index qr_scans_scanned_at_idx on qr_scans (scanned_at);
+
+-- Funnel beyond the raw scan above: explicit actions taken on the
+-- /coming-soon landing page the QR now redirects to (ComingSoonPage.tsx).
+-- 'directions' = tapped "Get Directions". More action types (e.g.
+-- 'instagram') can be added later without a schema change.
+create table qr_actions (
+  id bigint generated always as identity primary key,
+  banner_id text not null,
+  action text not null,
+  created_at timestamptz not null default now()
+);
+alter table qr_actions disable row level security;
+create index qr_actions_banner_id_idx on qr_actions (banner_id);
+
+-- "Notify me when you open" signups from the coming-soon landing page.
+-- Phone numbers are PII — the dashboard only lists the actual rows to an
+-- admin (see QrScansPage.tsx), even though, same as every other table
+-- here, there's no RLS on the table itself.
+create table leads (
+  id bigint generated always as identity primary key,
+  phone text not null,
+  banner_id text,
+  created_at timestamptz not null default now()
+);
+alter table leads disable row level security;

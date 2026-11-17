@@ -4,7 +4,9 @@ import { Box, Container, Paper, Stack, Table, TableBody, TableCell, TableHead, T
 import { BarChart } from "@mui/x-charts/BarChart";
 import { PageHeader } from "../components/PageHeader";
 import { MetricCard } from "../components/MetricCard";
+import { useAdmin } from "../state/adminAuth";
 import { loadQrScans, countsByBanner, deviceLabel, locationLabel, scansByDay, type QrScan } from "../lib/qrScans";
+import { loadQrActions, loadLeads, type QrAction, type Lead } from "../lib/qrFunnel";
 
 // The two banners currently live — add to this list as new banners go up.
 // Must match the slugs printed on each banner's actual QR code (encoded as
@@ -21,10 +23,15 @@ const KNOWN_BANNERS: { id: string; label: string }[] = [
 const QR_BASE_URL = "https://gorilla8-planning.vercel.app";
 
 export function QrScansPage() {
+  const { isAdmin } = useAdmin();
   const [scans, setScans] = useState<QrScan[] | null | "loading">("loading");
+  const [actions, setActions] = useState<QrAction[] | null | "loading">("loading");
+  const [leads, setLeads] = useState<Lead[] | null | "loading">("loading");
 
   useEffect(() => {
     loadQrScans().then(setScans);
+    loadQrActions().then(setActions);
+    loadLeads().then(setLeads);
   }, []);
 
   if (scans === "loading") {
@@ -58,14 +65,31 @@ export function QrScansPage() {
   const todayCount = scans.filter((s) => s.scannedAt.slice(0, 10) === todayKey).length;
   const dayData = scansByDay(scans, 14);
   const recent = scans.slice(0, 25);
+  const directionsClicks = Array.isArray(actions) ? actions.filter((a) => a.action === "directions").length : 0;
+  const leadCount = Array.isArray(leads) ? leads.length : 0;
+  const funnelTablesMissing = actions === null || leads === null;
 
   return (
     <PageShell>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(3, 1fr)" }, gap: 2 }}>
-        <MetricCard label="Total scans" value={String(scans.length)} accent="#39FF88" />
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)" }, gap: 2 }}>
+        <MetricCard label="Scans" value={String(scans.length)} accent="#39FF88" />
+        <MetricCard label="Directions clicks" value={String(directionsClicks)} accent="#3DB2FF" />
+        <MetricCard label="Leads captured" value={String(leadCount)} accent="#F2C744" />
         <MetricCard label="Today" value={String(todayCount)} />
-        <MetricCard label="Banners tracked" value={String(KNOWN_BANNERS.length)} sublabel="distinct QR codes" />
       </Box>
+
+      {funnelTablesMissing && (
+        <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, borderRadius: 4, border: "1px solid rgba(255,107,107,0.3)" }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 800, mb: 1, color: "#FF6B6B" }}>
+            qr_actions / leads tables not found
+          </Typography>
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            Run the <code>qr_actions</code> and <code>leads</code> blocks in <code>supabase_new_tables.sql</code>{" "}
+            (added alongside the coming-soon landing page) — "Directions clicks" and "Leads captured" above will
+            read 0 until then, even once people start using the landing page.
+          </Typography>
+        </Paper>
+      )}
 
       <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, borderRadius: 4 }}>
         <Typography variant="h6" sx={{ fontWeight: 800, mb: 0.5 }}>
@@ -73,8 +97,8 @@ export function QrScansPage() {
         </Typography>
         <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
           Generate a QR code for each link below (any free QR generator) and print it on that banner. Scanning it
-          logs the visit here, then redirects straight to the Google Maps location — no app, no permission
-          prompt, no added step for the person scanning.
+          logs the visit here, then redirects to the "Coming Soon" landing page (Get Directions / Notify me) — no
+          app, no permission prompt, no added step for the person scanning.
         </Typography>
         <Stack spacing={1.5}>
           {KNOWN_BANNERS.map((b) => {
@@ -153,6 +177,43 @@ export function QrScansPage() {
                     <TableCell>{KNOWN_BANNERS.find((b) => b.id === s.bannerId)?.label ?? s.bannerId}</TableCell>
                     <TableCell>{locationLabel(s)}</TableCell>
                     <TableCell>{deviceLabel(s.userAgent)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Box>
+        )}
+      </Paper>
+
+      <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, borderRadius: 4 }}>
+        <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>
+          Leads ({leadCount})
+        </Typography>
+        {!isAdmin ? (
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            Phone numbers are only shown in admin mode (tap the logo 5 times) — this count is visible to everyone,
+            the actual contact list isn't.
+          </Typography>
+        ) : !Array.isArray(leads) || leads.length === 0 ? (
+          <Typography variant="body2" sx={{ color: "text.secondary" }}>
+            No one has left a number yet.
+          </Typography>
+        ) : (
+          <Box sx={{ overflowX: "auto" }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>When</TableCell>
+                  <TableCell>Phone</TableCell>
+                  <TableCell>Banner</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {leads.map((lead) => (
+                  <TableRow key={lead.id}>
+                    <TableCell>{new Date(lead.createdAt).toLocaleString("en-IN")}</TableCell>
+                    <TableCell>{lead.phone}</TableCell>
+                    <TableCell>{KNOWN_BANNERS.find((b) => b.id === lead.bannerId)?.label ?? lead.bannerId ?? "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

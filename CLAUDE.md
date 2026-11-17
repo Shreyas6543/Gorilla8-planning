@@ -502,10 +502,18 @@ brand-new item just works with no migration step.
    + `@react-three/drei`. See "3D Walkthrough" and "Furniture layout
    architecture" below.
 7. **QR Scans (`/qr-scans`)** — read-only dashboard for the physical banner
-   QR codes: total scans, scans/day chart (last 14 days), per-banner counts,
-   and a recent-scans table (when, which banner, coarse location, device).
-   No admin gating — nothing here is user-edited, it's just a log view. See
-   "QR banner scan tracking" below.
+   QR codes: total scans, directions-click count, leads-captured count,
+   scans/day chart (last 14 days), per-banner counts, and a recent-scans
+   table (when, which banner, coarse location, device). No admin gating on
+   the page itself (nothing here is user-edited, it's just a log view) —
+   except the actual phone-number list under "Leads", which is PII and only
+   shown once admin mode is on. See "QR banner scan tracking" below.
+8. **Coming Soon (`/coming-soon?banner=<id>`)** — public landing page a
+   banner QR redirects to (NOT the dashboard's Maps link anymore — see
+   below). Deliberately has no `PageHeader`/nav: whoever lands here scanned
+   a physical banner and is a prospective customer, not dashboard-admin
+   material. Offers "Get Directions" (opens Maps) and "Notify me when you
+   open" (phone number capture), each individually tracked.
 
 ### QR banner scan tracking (`/qr-scans`, `api/qr/[banner].ts`)
 
@@ -544,7 +552,38 @@ Instead:
   pointed at `<domain>/api/qr/<id>` works, then print it.
 - What this deliberately does NOT capture: exact GPS (`navigator.
   geolocation` always triggers a permission prompt — out of scope, this is
-  IP-level city/region only), any PII.
+  IP-level city/region only).
+- **Routing gotcha already hit once, don't reintroduce it**: `vercel.json`'s
+  SPA catch-all rewrite (`"/(.*)" -> "/index.html"`) matched `/api/qr/shop`
+  before the serverless function ever ran, so the "redirect" actually served
+  a cached static `index.html` (visible as a blank page to Shreyas, and as
+  `x-vercel-cache: HIT` / `content-disposition: index.html` on inspection).
+  Fixed by excluding `/api/` from the rewrite pattern
+  (`"/((?!api/).*)" -> "/index.html"`). If any future vercel.json edit
+  touches that rewrite, keep the exclusion.
+- **The banner is currently "coming soon", pre-launch** — so instead of the
+  QR redirecting straight to the Maps pin (not very useful before the venue
+  exists), `api/qr/[banner].ts` redirects to `/coming-soon?banner=<id>`
+  (`src/pages/ComingSoonPage.tsx`), a public, no-nav landing page offering
+  two individually-trackable actions instead of one silent redirect:
+  - **"Get Directions"** — logs `{banner_id, action: 'directions'}` to new
+    table `qr_actions` (`src/lib/qrFunnel.ts: logQrAction`), then does the
+    `window.location` jump to the Maps link (now lives in this page, not
+    the serverless function).
+  - **"Notify me when you open"** — a phone number field; on submit, inserts
+    `{phone, banner_id}` into new table `leads` (`qrFunnel.ts: submitLead`).
+    No countdown/date shown (not confirmed yet) and no social-follow buttons
+    yet (no Instagram/WhatsApp channel link to use) — both easy to add to
+    this page later, see Open items.
+  - Both new tables (`qr_actions`, `leads`) are in `supabase_new_tables.sql`,
+    same **not yet run by Shreyas** situation as `qr_scans` was initially.
+  - `leads.phone` is PII: `QrScansPage.tsx` shows the **count** to everyone
+    but the actual phone-number table only when `isAdmin` (same 5-tap gate
+    as the rest of the site) — don't remove that gate when touching this
+    page.
+  - The printed QR codes themselves (`/api/qr/shop`, `/api/qr/others`)
+    didn't need to change/reprint for this — only what's behind that URL
+    changed.
 
 ## Data accuracy discipline
 
@@ -630,12 +669,15 @@ that isolation:
   Signage (signboard), Safety & Compliance (fire extinguisher). Two others
   were suggested but declined: POS/billing system, civil work (flooring/false
   ceiling/painting). Don't re-add those without being asked again.
-- QR scan tracking (see "QR banner scan tracking" above): Shreyas still needs
-  to (1) run the `qr_scans` SQL block in the Supabase editor, (2) generate an
-  actual QR code image for each of `/api/qr/shop` and `/api/qr/others` (via
-  any free QR generator) and print it on the right banner, and (3) once the
-  PR is merged/deployed, do one real test scan per banner to confirm rows
-  land in `qr_scans` before trusting the counts on `/qr-scans`.
+- QR scan tracking (see "QR banner scan tracking" above): `qr_scans` is
+  live and confirmed working (real test scan landed a row, visible on
+  `/qr-scans`). Still open: (1) run the new `qr_actions` and `leads` SQL
+  blocks in the Supabase editor, (2) once there's an actual opening date,
+  add a countdown to `ComingSoonPage.tsx` (deliberately left out for now —
+  don't invent one), (3) once an Instagram/WhatsApp channel exists, add
+  "Follow us" buttons to the same page (each its own `qr_actions` row, e.g.
+  `action: 'instagram'`) — requester declined both for now, don't add
+  without being asked again.
 
 ## Communication notes
 

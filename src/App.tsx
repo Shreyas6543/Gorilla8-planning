@@ -8,6 +8,7 @@ import { FloorPlanPage } from "./pages/FloorPlanPage";
 import { DesignPage } from "./pages/DesignPage";
 import { WalkthroughPage } from "./pages/WalkthroughPage";
 import { QrScansPage } from "./pages/QrScansPage";
+import { ComingSoonPage } from "./pages/ComingSoonPage";
 import { FurnitureLayoutProvider } from "./state/furnitureLayout";
 import { AdminProvider } from "./state/adminAuth";
 
@@ -26,6 +27,7 @@ function App() {
             <Route path="/design" element={<DesignPage />} />
             <Route path="/walkthrough" element={<WalkthroughPage />} />
             <Route path="/qr-scans" element={<QrScansPage />} />
+            <Route path="/coming-soon" element={<ComingSoonPage />} />
           </Routes>
         </FurnitureLayoutProvider>
       </AdminProvider>

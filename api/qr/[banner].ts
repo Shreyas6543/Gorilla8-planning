@@ -4,17 +4,22 @@
 // tracking" in CLAUDE.md for the full picture.
 //
 // A banner's QR code encodes a URL like /api/qr/shop instead of the Google
-// Maps link directly. That lets this function log the scan (which banner,
-// when, coarse location, device) before redirecting on to Maps — pointing
-// the QR straight at Maps would give us zero data, since Google owns that
-// redirect, not us.
+// Maps link (or anything else) directly. That lets this function log the
+// scan (which banner, when, coarse location, device) before redirecting on
+// — pointing the QR straight at an external destination would give us zero
+// data, since whoever owns that redirect, not us, sees the hit.
+//
+// This banner is currently a "coming soon" banner, pre-launch — so instead
+// of redirecting straight to the Google Maps pin (not very useful before
+// the venue is even open), this redirects to our own /coming-soon landing
+// page (src/pages/ComingSoonPage.tsx), which offers "Get Directions" AND
+// "Notify me when you open" (phone capture) as two separate, individually
+// trackable actions. The Maps link itself now lives in that page, not here.
 import { createClient } from "@supabase/supabase-js";
 
-// Destination every banner QR ultimately lands on. Hardcoded rather than a
-// new Vercel env var — this is a fixed venue address, not a secret, and
-// avoids a manual "add env var in Vercel dashboard" step for something this
-// static. Update here if the venue location link ever changes.
-const MAPS_URL = "https://maps.app.goo.gl/2UxvATetoRsutd9y9";
+// Relative, not absolute — works unmodified on preview deployments too, not
+// just the production domain. Matches the route in src/App.tsx.
+const LANDING_PATH = "/coming-soon";
 
 // Reuses the same two env vars the Vite client already uses (see
 // src/lib/supabaseClient.ts) — the VITE_ prefix only matters for Vite's
@@ -63,6 +68,6 @@ export default async function handler(req: any, res: any) {
     }
   }
 
-  res.writeHead(302, { Location: MAPS_URL });
+  res.writeHead(302, { Location: `${LANDING_PATH}?banner=${encodeURIComponent(bannerId)}` });
   res.end();
 }
