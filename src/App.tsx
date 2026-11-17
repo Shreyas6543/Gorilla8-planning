@@ -9,27 +9,36 @@ import { DesignPage } from "./pages/DesignPage";
 import { WalkthroughPage } from "./pages/WalkthroughPage";
 import { QrScansPage } from "./pages/QrScansPage";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
+import { TeamAccessPage } from "./pages/TeamAccessPage";
+import { Gate } from "./components/Gate";
 import { FurnitureLayoutProvider } from "./state/furnitureLayout";
 import { AdminProvider } from "./state/adminAuth";
+import { ViewerProvider } from "./state/viewerAuth";
 
 function App() {
   return (
     <BrowserRouter>
       <AdminProvider>
-        <FurnitureLayoutProvider>
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/expenses" element={<ExpensesPage />} />
-            <Route path="/ledger" element={<LedgerPage />} />
-            <Route path="/finance" element={<FinancePage />} />
-            <Route path="/marketing" element={<MarketingPage />} />
-            <Route path="/floorplan" element={<FloorPlanPage />} />
-            <Route path="/design" element={<DesignPage />} />
-            <Route path="/walkthrough" element={<WalkthroughPage />} />
-            <Route path="/qr-scans" element={<QrScansPage />} />
-            <Route path="/coming-soon" element={<ComingSoonPage />} />
-          </Routes>
-        </FurnitureLayoutProvider>
+        <ViewerProvider>
+          <FurnitureLayoutProvider>
+            <Routes>
+              {/* Internal/business pages — gated, see components/Gate.tsx */}
+              <Route path="/" element={<Gate><HomePage /></Gate>} />
+              <Route path="/expenses" element={<Gate><ExpensesPage /></Gate>} />
+              <Route path="/ledger" element={<Gate><LedgerPage /></Gate>} />
+              <Route path="/finance" element={<Gate><FinancePage /></Gate>} />
+              <Route path="/marketing" element={<Gate><MarketingPage /></Gate>} />
+              <Route path="/floorplan" element={<Gate><FloorPlanPage /></Gate>} />
+              <Route path="/design" element={<Gate><DesignPage /></Gate>} />
+              <Route path="/walkthrough" element={<Gate><WalkthroughPage /></Gate>} />
+              <Route path="/qr-scans" element={<Gate><QrScansPage /></Gate>} />
+
+              {/* Public — no Gate */}
+              <Route path="/coming-soon" element={<ComingSoonPage />} />
+              <Route path="/team" element={<TeamAccessPage />} />
+            </Routes>
+          </FurnitureLayoutProvider>
+        </ViewerProvider>
       </AdminProvider>
     </BrowserRouter>
   );

@@ -192,6 +192,60 @@ editing and Design-page publishing, unlocked from anywhere:
   passcode ships in the client bundle. Don't "upgrade" to real auth unless
   asked.
 
+### Two-tier access gate (`Gate.tsx`, `viewerAuth.tsx`, `/team`) — added 2026-11-17
+
+Until now, every page above was world-readable by design (see Supabase RLS
+notes: "fast & open," the passcode only ever gated *writes*) — a reasonable
+tradeoff when the only people with this site's URL were Shreyas and his two
+partners. That stopped being true the moment a banner QR (see "QR banner
+scan tracking" below) started funneling strangers to `/coming-soon`: one tap
+of the browser's back button, or stripping the URL down to the domain root,
+would otherwise land a random customer on the real internal dashboard —
+capital, partner dividend split, the lot.
+
+**Route-renaming would NOT have fixed this** — `Gorilla8-planning` is a
+public GitHub repo, so `src/App.tsx` and every route name in it is plainly
+readable by anyone who checks. Shreyas's first instinct (give every internal
+page an "unguessable" slug) was flagged as not actually solving the problem
+before building anything else — the real fix had to be a credential check
+enforced at render time, not an obscure URL.
+
+The fix, layered on top of the existing admin mode above rather than
+replacing it:
+
+- `src/state/viewerAuth.tsx` (`ViewerProvider`/`useViewer`, wraps the app in
+  `App.tsx` alongside `AdminProvider`) — a second, lower-stakes `isViewer`
+  flag, separate from `isAdmin`. Gates *viewing*, not editing. Unlike
+  `isAdmin` (deliberately session-only, see above), `isViewer` **does**
+  persist to `localStorage` (`gorilla8-viewer-v1`) — this is an everyday
+  convenience gate for Tushar/Yashwanth, not a one-off safety rail against
+  accidental edits, so forcing a re-entry on every refresh would be pure
+  friction with no real security upside (the passcode ships in the bundle
+  either way).
+- `src/lib/editAccess.ts` gained a second passcode pair:
+  `getConfiguredViewPasscode()`/`checkViewPasscode()`, reading
+  `VITE_VIEW_PASSCODE` (default fallback `"gorilla8team"`) — deliberately a
+  **different value** from `VITE_EDIT_PASSCODE`, so partners can be given
+  view access without also getting edit access.
+- `src/components/Gate.tsx` wraps every internal route's element in
+  `App.tsx` (Home, Expenses, Ledger, Finance, Marketing, Floor Plan, Design,
+  Walkthrough, QR Scans — everything except `/coming-soon` and `/team`
+  itself). Renders children if `isAdmin || isViewer`, else `<Navigate to=
+  "/coming-soon" replace />`. No passcode field lives in `Gate` itself — it
+  only ever redirects away.
+- `src/pages/TeamAccessPage.tsx` (`/team`) — the one entry point past `Gate`
+  on a device that's never unlocked before. Not linked from any nav
+  (`PageHeader` only ever renders on a page `Gate` already let through, so
+  there's no way to surface a link to it from inside the gated app) — just a
+  URL to bookmark/share directly with partners. One passcode field; tries
+  the admin passcode first, then the view one, whichever matches wins, then
+  navigates to `/`. Doesn't need to be a secret path itself (same "URLs
+  aren't secrets here" reasoning as above) since the passcode is the actual
+  barrier, not the fact that this page is at `/team`.
+- If a future page is added and should be internal/business-facing (not
+  something a QR-scanning stranger should reach), wrap its route element in
+  `<Gate>` too — it's opt-out by omission otherwise.
+
 ### Debounced auto-save (important UX requirement, don't regress)
 
 Shreyas was explicit about this: **no "Save" button, no losing a batch of
@@ -514,6 +568,9 @@ brand-new item just works with no migration step.
    a physical banner and is a prospective customer, not dashboard-admin
    material. Offers "Get Directions" (opens Maps) and "Notify me when you
    open" (phone number capture), each individually tracked.
+9. **Team Access (`/team`)** — public, no `PageHeader`. One passcode field;
+   the only way to unlock past `Gate.tsx` on a device that's never been
+   admin/viewer before. See "Two-tier access gate" above.
 
 ### QR banner scan tracking (`/qr-scans`, `api/qr/[banner].ts`)
 
@@ -678,6 +735,17 @@ that isolation:
   "Follow us" buttons to the same page (each its own `qr_actions` row, e.g.
   `action: 'instagram'`) — requester declined both for now, don't add
   without being asked again.
+- Two-tier access gate (see above): Shreyas still needs to (1) add
+  `VITE_VIEW_PASSCODE` as an env var in the Vercel project dashboard (same
+  "Claude can't touch Vercel project settings" situation as every other
+  Vercel-side step here) — without it, the gate still works but falls back
+  to the default `"gorilla8team"`, which is in this public repo's source
+  and therefore not actually secret, (2) share the real value with
+  Tushar/Yashwanth along with the `/team` URL, and (3) personally verify in
+  an incognito/private window that hitting `/` while logged out actually
+  bounces to `/coming-soon` — this was built and type-checks cleanly, but
+  this session had no browser-automation tool available to visually confirm
+  the redirect itself, only the code path and a successful build.
 
 ## Communication notes
 
