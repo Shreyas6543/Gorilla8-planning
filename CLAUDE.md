@@ -575,10 +575,12 @@ brand-new item just works with no migration step.
 10. **Wallet (`/wallet/:token`)** — public, no `PageHeader`. A customer's
     own welcome-credit balance, looked up by the unguessable token in their
     WhatsApp link, not a login. See "₹100 welcome credit wallet" below.
-11. **Redeem (`/redeem`)** — gated (`Gate.tsx`) and additionally **admin-
-    only** inside the page itself (not just `isViewer`) — a real write
-    against money-like data. Look up a wallet by phone, redeem some/all of
-    its credit at the counter. See "₹100 welcome credit wallet" below.
+11. **Wallet Admin (`/wallet-admin`, renamed from `/redeem` 2026-11-26)** —
+    gated (`Gate.tsx`) and additionally **admin-only** inside the page
+    itself (not just `isViewer`) — a real write against money-like data.
+    Look up a wallet by phone; redeem some/all of its credit at the
+    counter, OR add more (future promotions) — see "₹100 welcome credit
+    wallet" below.
 
 ### QR banner scan tracking (`/qr-scans`, `api/qr/[banner].ts`)
 
@@ -650,7 +652,7 @@ Instead:
     changed, same as it didn't need to change again for the wallet upgrade
     below either.
 
-### ₹100 welcome credit wallet (`claimWelcomeCredit`, `/wallet/:token`, `/redeem`) — added 2026-11-26
+### ₹100 welcome credit wallet (`claimWelcomeCredit`, `/wallet/:token`, `/wallet-admin`) — added 2026-11-26
 
 Upgraded the coming-soon page's phone capture from a plain "notify me" to a
 real incentive, once Shreyas decided a flat credit (vs. a vague "50% off
@@ -696,25 +698,36 @@ concept) was the better offer for conversion. Flow, end to end:
 3. `/wallet/:token` (`WalletPage.tsx`) — public, no `PageHeader`, looked up
    by the unguessable token in the URL (not a login). Shows the remaining
    `₹{creditBalance}`, masked phone, "show this screen at the counter."
-4. At the counter, Shreyas looks the customer up by phone on `/redeem`
-   (`RedeemPage.tsx`) — **admin-only**, not just `isViewer`, since this is a
-   real write against money-like data (unlike the rest of `/qr-scans`,
-   which a viewer can read). `redeemCredit()` re-reads the current balance
-   right before writing (not a value already sitting in client state), so
-   two redemptions firing close together can't both succeed against a stale
-   balance. Each redemption also logs a row to `wallet_redemptions` (phone,
-   amount, timestamp) — an audit trail behind the single `credit_balance`
-   number, in case Shreyas wants to look back at partial-redemption history
-   later.
-5. `QrScansPage.tsx`'s "Wallets" section (renamed from "Leads") now shows
+4. At the counter, Shreyas looks the customer up by phone on `/wallet-admin`
+   (`WalletAdminPage.tsx`, renamed from `/redeem` once it grew a second
+   function — see next point) — **admin-only**, not just `isViewer`, since
+   this is a real write against money-like data (unlike the rest of
+   `/qr-scans`, which a viewer can read). Both `redeemCredit()` and
+   `addCredit()` re-read the current balance right before writing (not a
+   value already sitting in client state), so two writes firing close
+   together can't both succeed against a stale balance.
+5. **`credit_balance` is a running total, not a one-shot thing that only
+   depletes** — Shreyas: "we'll be doing more and more promotions like
+   this, so the cash might get more and more added." `wallet_transactions`
+   is ONE unified ledger for every balance change (not separate add/redeem
+   tables): a positive `amount` is credit granted (the initial welcome
+   credit, or a future promo via `addCredit()` — `WalletAdminPage.tsx`'s
+   "Add credit" section, admin enters an amount + a free-text reason like
+   "Diwali promo" that shows up in the customer-facing history), a negative
+   one is a counter redemption. `credit_balance` on `leads` is always the
+   derived running total; `wallet_transactions` is the audit trail behind
+   it. `addCredit()` requires an existing wallet (looked up by phone) — a
+   brand-new number should go through the normal claim flow first, not be
+   granted a wallet out of band here.
+6. `QrScansPage.tsx`'s "Wallets" section (renamed from "Leads") now shows
    each wallet's remaining balance, plus a site-wide "Credit outstanding"
    metric (sum of every `credit_balance` — i.e. total exposure if everyone
    redeemed at once).
 
 **If a future change touches this flow**: the redeem-at-counter assumption
-is "Shreyas personally redeems these" (his own words) — if staff later need
-to redeem without his full edit passcode, that's a third access tier to
-design, not a reason to drop `RedeemPage.tsx`'s `isAdmin` requirement down
+is "Shreyas personally [manages] these" (his own words) — if staff later
+need to use `/wallet-admin` without his full edit passcode, that's a third
+access tier to design, not a reason to drop its `isAdmin` requirement down
 to `isViewer`.
 
 ## Data accuracy discipline
@@ -823,7 +836,7 @@ that isolation:
   the redirect itself, only the code path and a successful build.
 - ₹100 welcome credit wallet (see above): Shreyas still needs to (1) run the
   updated `leads` block (now with `wallet_token`/`credit_balance`/unique
-  `phone`) plus the new `wallet_redemptions` block in
+  `phone`) plus the new `wallet_transactions` block in
   `supabase_new_tables.sql` — these replace the old plain `leads` schema,
   which was never actually run, so this is a clean create, not a migration,
   (2) finish setting up a WhatsApp Business API provider and set
@@ -834,7 +847,37 @@ that isolation:
   (3) if the chosen provider's API shape isn't Meta Cloud API-compatible,
   the `fetch()` call in `api/send-wallet-whatsapp.ts` needs adjusting to
   match, (4) do one real end-to-end test (claim → WhatsApp arrives → open
-  `/wallet/<token>` → redeem on `/redeem`) once the provider is live.
+  `/wallet/<token>` → redeem on `/wallet-admin`) once the provider is live.
+
+### Branding (logo, favicon) — added 2026-11-26
+
+Real brand assets, not placeholders — sourced from Shreyas's asset folder
+(`~/Documents/gorilla8`, outside this repo, not something future Claude can
+re-read without being pointed at it again). Two files live in
+`src/assets/`, both derived (cropped/resized/optimized) from the original
+`gorilla8-logo.png` there, not committed at its original ~965KB:
+
+- `src/assets/gorilla8-icon.png` (300×196, ~72KB) — just the gorilla head +
+  gaming-headphone, no wordmark. Used small (navbar, ~44px): `PageHeader.tsx`
+  (replacing the old generic `SportsEsportsIcon` circle) and
+  `TeamAccessPage.tsx`'s header badge.
+- `src/assets/gorilla8-logo-full.png` (700×582, ~420KB) — the full lockup
+  (gorilla + "GORILLA 8" wordmark + "POOL • PLAY • CHILL" tagline),
+  transparent background. Used larger on customer-facing hero moments:
+  `ComingSoonPage.tsx` and `WalletPage.tsx` (replacing a generic icon +
+  separate "GORILLA 8" `Typography` heading — the image already contains
+  the wordmark, don't re-add a redundant text heading next to it).
+- `public/favicon.png` (512×512, transparent) and
+  `public/apple-touch-icon.png` (180×180, opaque `#0B0D10` background —
+  iOS doesn't handle a transparent apple-touch-icon well) — both cropped
+  from the same gorilla-head region as `gorilla8-icon.png`, referenced from
+  `index.html`. The old generic `favicon.svg` (an unrelated placeholder,
+  not a Gorilla8 asset) was deleted.
+- The source folder has several other asset categories not yet used
+  anywhere in this app (interior/café photos, entrance signage print
+  files, a glass-poster design, a QR banner print file) — left alone since
+  nothing in this app currently calls for them; revisit if a future page
+  needs real venue photography.
 
 ## Communication notes
 

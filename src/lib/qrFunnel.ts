@@ -3,9 +3,14 @@ import { supabase, isSupabaseConfigured } from "./supabaseClient";
 // The steps past the raw scan (qr_scans, see qrScans.ts) that happen on the
 // /coming-soon landing page and beyond: tapping "Get Directions"
 // (qr_actions), claiming the ₹100 welcome credit (leads — one row = one
-// wallet), and redeeming it at the counter (wallet_redemptions). All
-// writes and reads live here, unlike qrScans.ts which is read-only — this
-// app itself is the writer for these, same as Ledger/Expenses.
+// wallet), redeeming it at the counter, and (per Shreyas: "we'll be doing
+// more and more promotions... cash might get added more and more") topping
+// it back up later. credit_balance is a running total, not a one-shot
+// thing that only depletes — every change to it (a grant OR a redemption)
+// is logged as a signed row in wallet_transactions, one unified ledger
+// rather than separate add/redeem tables. All writes and reads live here,
+// unlike qrScans.ts which is read-only — this app itself is the writer for
+// these, same as Ledger/Expenses.
 
 export const WELCOME_CREDIT = 100;
 
@@ -88,6 +93,7 @@ export async function claimWelcomeCredit(rawPhone: string, bannerId: string | nu
       if (retry.data) return { status: "already_claimed", wallet: toWallet(retry.data) };
       return { status: "error" };
     }
+    await supabase.from("wallet_transactions").insert({ phone, amount: WELCOME_CREDIT, reason: "Welcome credit" });
     return { status: "created", wallet: toWallet(data) };
   } catch {
     return { status: "error" };
@@ -117,13 +123,13 @@ export async function getWalletByPhone(rawPhone: string): Promise<Wallet | null>
   }
 }
 
-export type RedeemResult = { ok: true; newBalance: number } | { ok: false; reason: "not_found" | "insufficient" | "error" };
+export type WalletWriteResult = { ok: true; newBalance: number } | { ok: false; reason: "not_found" | "insufficient" | "error" };
 
-// Called from RedeemPage.tsx (admin-only). Re-reads the current balance
-// right before writing rather than trusting a value the caller already has
-// in state, so two redemptions in quick succession can't both succeed
-// against a stale balance.
-export async function redeemCredit(rawPhone: string, amount: number): Promise<RedeemResult> {
+// Called from WalletAdminPage.tsx (admin-only). Re-reads the current
+// balance right before writing rather than trusting a value the caller
+// already has in state, so two redemptions in quick succession can't both
+// succeed against a stale balance.
+export async function redeemCredit(rawPhone: string, amount: number, reason = "Redeemed at counter"): Promise<WalletWriteResult> {
   const phone = normalizePhone(rawPhone);
   if (!phone || !isSupabaseConfigured || !supabase) return { ok: false, reason: "error" };
   if (!(amount > 0)) return { ok: false, reason: "error" };
@@ -143,10 +149,66 @@ export async function redeemCredit(rawPhone: string, amount: number): Promise<Re
     const { error: updateError } = await supabase.from("leads").update({ credit_balance: newBalance }).eq("phone", phone);
     if (updateError) return { ok: false, reason: "error" };
 
-    await supabase.from("wallet_redemptions").insert({ phone, amount });
+    await supabase.from("wallet_transactions").insert({ phone, amount: -amount, reason });
     return { ok: true, newBalance };
   } catch {
     return { ok: false, reason: "error" };
+  }
+}
+
+// Tops up an EXISTING wallet — for future promotions ("we'll be doing more
+// and more promotions... cash might get added more and more," per
+// Shreyas). Requires the phone to already have a wallet (from the normal
+// claim flow); a brand-new number should claim the welcome credit first
+// rather than being granted one out of band here. Same re-read-before-write
+// pattern as redeemCredit, for the same race-safety reason.
+export async function addCredit(rawPhone: string, amount: number, reason: string): Promise<WalletWriteResult> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone || !isSupabaseConfigured || !supabase) return { ok: false, reason: "error" };
+  if (!(amount > 0) || !reason.trim()) return { ok: false, reason: "error" };
+
+  try {
+    const { data: current, error: fetchError } = await supabase
+      .from("leads")
+      .select("credit_balance")
+      .eq("phone", phone)
+      .maybeSingle();
+    if (fetchError || !current) return { ok: false, reason: "not_found" };
+
+    const newBalance = (Number(current.credit_balance) || 0) + amount;
+    const { error: updateError } = await supabase.from("leads").update({ credit_balance: newBalance }).eq("phone", phone);
+    if (updateError) return { ok: false, reason: "error" };
+
+    await supabase.from("wallet_transactions").insert({ phone, amount, reason: reason.trim() });
+    return { ok: true, newBalance };
+  } catch {
+    return { ok: false, reason: "error" };
+  }
+}
+
+export interface WalletTransaction {
+  amount: number;
+  reason: string;
+  createdAt: string;
+}
+
+export async function loadWalletTransactions(rawPhone: string): Promise<WalletTransaction[]> {
+  const phone = normalizePhone(rawPhone);
+  if (!phone || !isSupabaseConfigured || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from("wallet_transactions")
+      .select("amount, reason, created_at")
+      .eq("phone", phone)
+      .order("created_at", { ascending: false });
+    if (error) return [];
+    return (data ?? []).map((r) => ({
+      amount: Number(r.amount) || 0,
+      reason: typeof r.reason === "string" ? r.reason : "",
+      createdAt: typeof r.created_at === "string" ? r.created_at : new Date(0).toISOString(),
+    }));
+  } catch {
+    return [];
   }
 }
 

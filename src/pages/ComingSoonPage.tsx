@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Box, Button, Chip, Link as MuiLink, Paper, Stack, TextField, Typography } from "@mui/material";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import DirectionsIcon from "@mui/icons-material/Directions";
 import RedeemIcon from "@mui/icons-material/Redeem";
 import { logQrAction, claimWelcomeCredit, sendWalletWhatsApp, WELCOME_CREDIT, type ClaimResult } from "../lib/qrFunnel";
+import gorillaLogo from "../assets/gorilla8-logo-full.png";
 
 // Public landing page a banner QR redirects to via api/qr/[banner].ts —
 // deliberately standalone (no PageHeader/nav): whoever scans a banner is a
@@ -66,26 +66,9 @@ export function ComingSoonPage() {
     >
       <Paper elevation={0} sx={{ p: { xs: 3, sm: 4 }, borderRadius: 4, maxWidth: 420, width: "100%" }}>
         <Stack spacing={2.5} sx={{ alignItems: "center", textAlign: "center" }}>
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "rgba(57,255,136,0.12)",
-              border: "1px solid rgba(57,255,136,0.35)",
-            }}
-          >
-            <SportsEsportsIcon sx={{ color: "primary.main", fontSize: 28 }} />
-          </Box>
-
           <Box>
-            <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-              GORILLA 8
-            </Typography>
-            <Chip label="Coming Soon" size="small" sx={{ mt: 1, bgcolor: "primary.main", color: "#04140a", fontWeight: 700 }} />
+            <Box component="img" src={gorillaLogo} alt="Gorilla 8" sx={{ width: "100%", maxWidth: 260, display: "block", mx: "auto" }} />
+            <Chip label="Coming Soon" size="small" sx={{ mt: 1.5, bgcolor: "primary.main", color: "#04140a", fontWeight: 700 }} />
           </Box>
 
           <Typography variant="body2" sx={{ color: "text.secondary" }}>

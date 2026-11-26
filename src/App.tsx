@@ -11,7 +11,7 @@ import { QrScansPage } from "./pages/QrScansPage";
 import { ComingSoonPage } from "./pages/ComingSoonPage";
 import { TeamAccessPage } from "./pages/TeamAccessPage";
 import { WalletPage } from "./pages/WalletPage";
-import { RedeemPage } from "./pages/RedeemPage";
+import { WalletAdminPage } from "./pages/WalletAdminPage";
 import { Gate } from "./components/Gate";
 import { FurnitureLayoutProvider } from "./state/furnitureLayout";
 import { AdminProvider } from "./state/adminAuth";
@@ -35,7 +35,7 @@ function App() {
               <Route path="/walkthrough" element={<Gate><WalkthroughPage /></Gate>} />
               <Route path="/qr-scans" element={<Gate><QrScansPage /></Gate>} />
               {/* Gate-wrapped (need at least viewer), admin check happens inside the page itself */}
-              <Route path="/redeem" element={<Gate><RedeemPage /></Gate>} />
+              <Route path="/wallet-admin" element={<Gate><WalletAdminPage /></Gate>} />
 
               {/* Public — no Gate */}
               <Route path="/coming-soon" element={<ComingSoonPage />} />

@@ -93,11 +93,13 @@ create index qr_actions_banner_id_idx on qr_actions (banner_id);
 -- the normalized 10-digit Indian mobile number (no +91/0 prefix — see
 -- normalizePhone() in qrFunnel.ts), unique so nobody can claim twice.
 -- `wallet_token` is the unguessable id in the /wallet/<token> link sent to
--- them over WhatsApp; `credit_balance` starts at 100 and is decremented at
--- the counter via RedeemPage.tsx (admin-only). Phone numbers are PII — the
--- dashboard only lists the actual rows to an admin (see QrScansPage.tsx),
--- even though, same as every other table here, there's no RLS on the
--- table itself.
+-- them over WhatsApp; `credit_balance` is a running total, NOT a one-time
+-- thing that only ever goes down — Shreyas plans ongoing promotions that
+-- top it back up over time (see wallet_transactions below), redeemed at
+-- the counter via WalletAdminPage.tsx (admin-only). Phone numbers are PII
+-- — the dashboard only lists the actual rows to an admin (see
+-- QrScansPage.tsx), even though, same as every other table here, there's
+-- no RLS on the table itself.
 create table leads (
   id bigint generated always as identity primary key,
   phone text not null unique,
@@ -109,16 +111,20 @@ create table leads (
 alter table leads disable row level security;
 create index leads_wallet_token_idx on leads (wallet_token);
 
--- Redemption history — one row per counter redemption, so a credit_balance
--- of e.g. 40 (after a ₹60 redemption against a ₹100 starting credit) has an
--- audit trail behind it, not just a silently-decremented number. Written by
--- RedeemPage.tsx (admin-only — Shreyas redeems these personally at the
--- counter for now, per his call).
-create table wallet_redemptions (
+-- One unified ledger for every balance change — a positive `amount` is
+-- credit ADDED (the initial ₹100 welcome credit, a future promo top-up,
+-- etc.), a negative one is credit REDEEMED at the counter. `credit_balance`
+-- on `leads` is the running total; this table is the audit trail behind
+-- it, so "why is this balance what it is" is always answerable. Written by
+-- qrFunnel.ts (claimWelcomeCredit, addCredit, redeemCredit) — adds happen
+-- from the claim flow or WalletAdminPage.tsx (admin-only), redemptions
+-- only from WalletAdminPage.tsx.
+create table wallet_transactions (
   id bigint generated always as identity primary key,
   phone text not null,
-  amount numeric not null,
-  redeemed_at timestamptz not null default now()
+  amount numeric not null, -- positive = credit added, negative = redeemed
+  reason text not null,
+  created_at timestamptz not null default now()
 );
-alter table wallet_redemptions disable row level security;
-create index wallet_redemptions_phone_idx on wallet_redemptions (phone);
+alter table wallet_transactions disable row level security;
+create index wallet_transactions_phone_idx on wallet_transactions (phone);

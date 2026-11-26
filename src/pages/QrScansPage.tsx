@@ -194,7 +194,7 @@ export function QrScansPage() {
         {!isAdmin ? (
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
             Phone numbers are only shown in admin mode (tap the logo 5 times) — these counts are visible to
-            everyone, the actual contact list isn't. To redeem a credit at the counter, use the Redeem page.
+            everyone, the actual contact list isn't. To redeem or add credit, use the Wallet Admin page.
           </Typography>
         ) : !Array.isArray(leads) || leads.length === 0 ? (
           <Typography variant="body2" sx={{ color: "text.secondary" }}>

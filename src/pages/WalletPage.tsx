@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Box, Chip, Paper, Stack, Typography } from "@mui/material";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import { getWalletByToken, type Wallet } from "../lib/qrFunnel";
+import gorillaLogo from "../assets/gorilla8-logo-full.png";
 
 // Public, no PageHeader — same reasoning as ComingSoonPage.tsx: whoever has
 // this link is a prospective customer, shown their own wallet via an
@@ -36,24 +36,10 @@ export function WalletPage() {
     >
       <Paper elevation={0} sx={{ p: { xs: 3, sm: 4 }, borderRadius: 4, maxWidth: 420, width: "100%" }}>
         <Stack spacing={2.5} sx={{ alignItems: "center", textAlign: "center" }}>
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              bgcolor: "rgba(57,255,136,0.12)",
-              border: "1px solid rgba(57,255,136,0.35)",
-            }}
-          >
-            <SportsEsportsIcon sx={{ color: "primary.main", fontSize: 28 }} />
+          <Box>
+            <Box component="img" src={gorillaLogo} alt="Gorilla 8" sx={{ width: "100%", maxWidth: 220, display: "block", mx: "auto" }} />
+            <Chip label="WALLET" size="small" sx={{ mt: 1.5, bgcolor: "rgba(57,255,136,0.15)", color: "#39FF88", fontWeight: 800, letterSpacing: "0.05em" }} />
           </Box>
-
-          <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
-            GORILLA 8 WALLET
-          </Typography>
 
           {wallet === "loading" && <Typography sx={{ color: "text.secondary" }}>Loading…</Typography>}
 

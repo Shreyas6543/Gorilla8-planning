@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Box, Button, Paper, Stack, TextField, Typography } from "@mui/material";
 import { useAdmin } from "../state/adminAuth";
 import { useViewer } from "../state/viewerAuth";
+import gorillaIcon from "../assets/gorilla8-icon.png";
 
 // The one entry point past Gate.tsx on a device that's never unlocked
 // before — not linked from any nav (PageHeader only renders on pages
@@ -42,7 +43,22 @@ export function TeamAccessPage() {
       }}
     >
       <Paper elevation={0} sx={{ p: 4, borderRadius: 4, maxWidth: 360, width: "100%" }}>
-        <Stack spacing={2}>
+        <Stack spacing={2} sx={{ alignItems: "center", textAlign: "center" }}>
+          <Box
+            sx={{
+              width: 48,
+              height: 48,
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              bgcolor: "rgba(57,255,136,0.12)",
+              border: "1px solid rgba(57,255,136,0.35)",
+              overflow: "hidden",
+            }}
+          >
+            <Box component="img" src={gorillaIcon} alt="" sx={{ width: "78%", height: "78%", objectFit: "contain" }} />
+          </Box>
           <Typography variant="h6" sx={{ fontWeight: 800 }}>
             Team access
           </Typography>
@@ -50,6 +66,7 @@ export function TeamAccessPage() {
             Enter your access code to continue.
           </Typography>
           <TextField
+            fullWidth
             type="password"
             size="small"
             value={input}
@@ -62,7 +79,7 @@ export function TeamAccessPage() {
             helperText={error ? "Incorrect code" : " "}
             autoFocus
           />
-          <Button variant="contained" onClick={handleSubmit} sx={{ color: "#04140a" }}>
+          <Button fullWidth variant="contained" onClick={handleSubmit} sx={{ color: "#04140a" }}>
             Continue
           </Button>
         </Stack>

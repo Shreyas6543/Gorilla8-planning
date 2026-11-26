@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Stack, TextField, Typography } from "@mui/material";
 import { Link, useLocation } from "react-router-dom";
-import SportsEsportsIcon from "@mui/icons-material/SportsEsports";
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { useAdmin } from "../state/adminAuth";
+import gorillaIcon from "../assets/gorilla8-icon.png";
 
 const NAV_LINKS = [
   { to: "/", label: "Home" },
@@ -14,7 +14,7 @@ const NAV_LINKS = [
   { to: "/floorplan", label: "Floor Plan" },
   { to: "/design", label: "Design" },
   { to: "/qr-scans", label: "QR Scans" },
-  { to: "/redeem", label: "Redeem" },
+  { to: "/wallet-admin", label: "Wallet Admin" },
 ];
 
 const TAP_COUNT_REQUIRED = 5;
@@ -74,9 +74,10 @@ export function PageHeader({ subtitle }: PageHeaderProps) {
             flexShrink: 0,
             cursor: isAdmin ? "default" : "pointer",
             userSelect: "none",
+            overflow: "hidden",
           }}
         >
-          <SportsEsportsIcon sx={{ color: "primary.main" }} />
+          <Box component="img" src={gorillaIcon} alt="" sx={{ width: "78%", height: "78%", objectFit: "contain" }} />
         </Box>
         <Typography variant="h4" sx={{ fontWeight: 800, letterSpacing: "-0.02em" }}>
           GORILLA 8
