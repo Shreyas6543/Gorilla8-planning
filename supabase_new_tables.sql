@@ -88,14 +88,37 @@ create table qr_actions (
 alter table qr_actions disable row level security;
 create index qr_actions_banner_id_idx on qr_actions (banner_id);
 
--- "Notify me when you open" signups from the coming-soon landing page.
--- Phone numbers are PII — the dashboard only lists the actual rows to an
--- admin (see QrScansPage.tsx), even though, same as every other table
--- here, there's no RLS on the table itself.
+-- "Claim your ₹100 welcome credit" signups from the coming-soon landing
+-- page (ComingSoonPage.tsx) — one row = one person's wallet. `phone` is
+-- the normalized 10-digit Indian mobile number (no +91/0 prefix — see
+-- normalizePhone() in qrFunnel.ts), unique so nobody can claim twice.
+-- `wallet_token` is the unguessable id in the /wallet/<token> link sent to
+-- them over WhatsApp; `credit_balance` starts at 100 and is decremented at
+-- the counter via RedeemPage.tsx (admin-only). Phone numbers are PII — the
+-- dashboard only lists the actual rows to an admin (see QrScansPage.tsx),
+-- even though, same as every other table here, there's no RLS on the
+-- table itself.
 create table leads (
   id bigint generated always as identity primary key,
-  phone text not null,
+  phone text not null unique,
   banner_id text,
+  wallet_token text not null unique,
+  credit_balance numeric not null default 100,
   created_at timestamptz not null default now()
 );
 alter table leads disable row level security;
+create index leads_wallet_token_idx on leads (wallet_token);
+
+-- Redemption history — one row per counter redemption, so a credit_balance
+-- of e.g. 40 (after a ₹60 redemption against a ₹100 starting credit) has an
+-- audit trail behind it, not just a silently-decremented number. Written by
+-- RedeemPage.tsx (admin-only — Shreyas redeems these personally at the
+-- counter for now, per his call).
+create table wallet_redemptions (
+  id bigint generated always as identity primary key,
+  phone text not null,
+  amount numeric not null,
+  redeemed_at timestamptz not null default now()
+);
+alter table wallet_redemptions disable row level security;
+create index wallet_redemptions_phone_idx on wallet_redemptions (phone);

@@ -566,11 +566,19 @@ brand-new item just works with no migration step.
    banner QR redirects to (NOT the dashboard's Maps link anymore — see
    below). Deliberately has no `PageHeader`/nav: whoever lands here scanned
    a physical banner and is a prospective customer, not dashboard-admin
-   material. Offers "Get Directions" (opens Maps) and "Notify me when you
-   open" (phone number capture), each individually tracked.
+   material. Offers "Get Directions" (opens Maps) and "Claim My ₹100 →" (a
+   welcome-credit wallet, sent over WhatsApp), each individually tracked.
+   See "₹100 welcome credit wallet" below.
 9. **Team Access (`/team`)** — public, no `PageHeader`. One passcode field;
    the only way to unlock past `Gate.tsx` on a device that's never been
    admin/viewer before. See "Two-tier access gate" above.
+10. **Wallet (`/wallet/:token`)** — public, no `PageHeader`. A customer's
+    own welcome-credit balance, looked up by the unguessable token in their
+    WhatsApp link, not a login. See "₹100 welcome credit wallet" below.
+11. **Redeem (`/redeem`)** — gated (`Gate.tsx`) and additionally **admin-
+    only** inside the page itself (not just `isViewer`) — a real write
+    against money-like data. Look up a wallet by phone, redeem some/all of
+    its credit at the counter. See "₹100 welcome credit wallet" below.
 
 ### QR banner scan tracking (`/qr-scans`, `api/qr/[banner].ts`)
 
@@ -627,20 +635,87 @@ Instead:
     table `qr_actions` (`src/lib/qrFunnel.ts: logQrAction`), then does the
     `window.location` jump to the Maps link (now lives in this page, not
     the serverless function).
-  - **"Notify me when you open"** — a phone number field; on submit, inserts
-    `{phone, banner_id}` into new table `leads` (`qrFunnel.ts: submitLead`).
-    No countdown/date shown (not confirmed yet) and no social-follow buttons
-    yet (no Instagram/WhatsApp channel link to use) — both easy to add to
-    this page later, see Open items.
+  - **"Claim My ₹100 →"** (originally a plain "Notify me," upgraded
+    2026-11-26 — see "₹100 welcome credit wallet" below) — a phone number
+    field; on submit, creates a wallet (table `leads`) and sends the wallet
+    link over WhatsApp.
   - Both new tables (`qr_actions`, `leads`) are in `supabase_new_tables.sql`,
     same **not yet run by Shreyas** situation as `qr_scans` was initially.
-  - `leads.phone` is PII: `QrScansPage.tsx` shows the **count** to everyone
+  - `leads.phone` is PII: `QrScansPage.tsx` shows **counts** to everyone
     but the actual phone-number table only when `isAdmin` (same 5-tap gate
     as the rest of the site) — don't remove that gate when touching this
     page.
   - The printed QR codes themselves (`/api/qr/shop`, `/api/qr/others`)
     didn't need to change/reprint for this — only what's behind that URL
-    changed.
+    changed, same as it didn't need to change again for the wallet upgrade
+    below either.
+
+### ₹100 welcome credit wallet (`claimWelcomeCredit`, `/wallet/:token`, `/redeem`) — added 2026-11-26
+
+Upgraded the coming-soon page's phone capture from a plain "notify me" to a
+real incentive, once Shreyas decided a flat credit (vs. a vague "50% off
+first week," which doesn't map onto a pay-per-hour café with no membership
+concept) was the better offer for conversion. Flow, end to end:
+
+1. Visitor enters their phone on `/coming-soon` and taps "Claim My ₹100 →".
+   `claimWelcomeCredit()` (`src/lib/qrFunnel.ts`) validates it with
+   `normalizePhone()` (must reduce to exactly 10 digits starting 6-9, after
+   stripping a `+91`/`91`/`0` prefix), then checks `leads.phone` (unique
+   constraint — see `supabase_new_tables.sql`) for an existing wallet before
+   creating a new one with `credit_balance = WELCOME_CREDIT` (100) and a
+   random `wallet_token` (`crypto.randomUUID()`).
+2. `sendWalletWhatsApp()` POSTs to `api/send-wallet-whatsapp.ts` (a second
+   Vercel serverless function, same non-Vite-app situation as
+   `api/qr/[banner].ts`), which is meant to deliver
+   `https://gorilla8-planning.vercel.app/wallet/<token>` over WhatsApp via a
+   Business API provider.
+   - **STATUS AS OF 2026-11-26: not wired to a real provider.** Shreyas is
+     setting one up himself (a WhatsApp Business API provider needs his own
+     Meta business verification — not something Claude can do). The function
+     is written against Meta's official Cloud API request shape (what most
+     providers either use directly or closely mirror) and reads
+     `WHATSAPP_API_URL`/`WHATSAPP_API_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID`/
+     `WHATSAPP_TEMPLATE_NAME` as Vercel env vars — none of which exist yet,
+     so it currently always returns `{ sent: false, reason: 'not_configured'
+     }`.
+   - Chose this over a "lightweight validation only, no real verification"
+     MVP (an earlier, since-superseded decision in this same conversation)
+     once Shreyas specifically wanted WhatsApp delivery + a self-serve
+     wallet page as the actual mechanism, not a stopgap.
+   - If the real provider's REST shape differs from Meta's Cloud API (e.g. a
+     BSP with its own simplified API), only the `fetch()` call inside
+     `api/send-wallet-whatsapp.ts` needs to change — nothing else in this
+     flow (the wallet page, the redeem page, the data model) depends on
+     which provider it ends up being.
+   - **Graceful fallback, don't remove**: `ComingSoonPage.tsx` always checks
+     `sendWalletWhatsApp()`'s return value. On `false` (not configured yet,
+     or the provider call failed), it shows the `/wallet/<token>` link
+     directly on-screen instead of claiming "check your WhatsApp" — the
+     whole feature works end-to-end even before the provider is live,
+     WhatsApp delivery is strictly an upgrade on top.
+3. `/wallet/:token` (`WalletPage.tsx`) — public, no `PageHeader`, looked up
+   by the unguessable token in the URL (not a login). Shows the remaining
+   `₹{creditBalance}`, masked phone, "show this screen at the counter."
+4. At the counter, Shreyas looks the customer up by phone on `/redeem`
+   (`RedeemPage.tsx`) — **admin-only**, not just `isViewer`, since this is a
+   real write against money-like data (unlike the rest of `/qr-scans`,
+   which a viewer can read). `redeemCredit()` re-reads the current balance
+   right before writing (not a value already sitting in client state), so
+   two redemptions firing close together can't both succeed against a stale
+   balance. Each redemption also logs a row to `wallet_redemptions` (phone,
+   amount, timestamp) — an audit trail behind the single `credit_balance`
+   number, in case Shreyas wants to look back at partial-redemption history
+   later.
+5. `QrScansPage.tsx`'s "Wallets" section (renamed from "Leads") now shows
+   each wallet's remaining balance, plus a site-wide "Credit outstanding"
+   metric (sum of every `credit_balance` — i.e. total exposure if everyone
+   redeemed at once).
+
+**If a future change touches this flow**: the redeem-at-counter assumption
+is "Shreyas personally redeems these" (his own words) — if staff later need
+to redeem without his full edit passcode, that's a third access tier to
+design, not a reason to drop `RedeemPage.tsx`'s `isAdmin` requirement down
+to `isViewer`.
 
 ## Data accuracy discipline
 
@@ -746,6 +821,20 @@ that isolation:
   bounces to `/coming-soon` — this was built and type-checks cleanly, but
   this session had no browser-automation tool available to visually confirm
   the redirect itself, only the code path and a successful build.
+- ₹100 welcome credit wallet (see above): Shreyas still needs to (1) run the
+  updated `leads` block (now with `wallet_token`/`credit_balance`/unique
+  `phone`) plus the new `wallet_redemptions` block in
+  `supabase_new_tables.sql` — these replace the old plain `leads` schema,
+  which was never actually run, so this is a clean create, not a migration,
+  (2) finish setting up a WhatsApp Business API provider and set
+  `WHATSAPP_API_URL`/`WHATSAPP_API_TOKEN`/`WHATSAPP_PHONE_NUMBER_ID`/
+  `WHATSAPP_TEMPLATE_NAME` as Vercel env vars — until then, wallet links
+  show on-screen instead of arriving over WhatsApp (see "₹100 welcome
+  credit wallet" above for why that's a safe fallback, not a broken state),
+  (3) if the chosen provider's API shape isn't Meta Cloud API-compatible,
+  the `fetch()` call in `api/send-wallet-whatsapp.ts` needs adjusting to
+  match, (4) do one real end-to-end test (claim → WhatsApp arrives → open
+  `/wallet/<token>` → redeem on `/redeem`) once the provider is live.
 
 ## Communication notes
 

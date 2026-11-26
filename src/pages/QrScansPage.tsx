@@ -67,14 +67,16 @@ export function QrScansPage() {
   const recent = scans.slice(0, 25);
   const directionsClicks = Array.isArray(actions) ? actions.filter((a) => a.action === "directions").length : 0;
   const leadCount = Array.isArray(leads) ? leads.length : 0;
+  const outstandingCredit = Array.isArray(leads) ? leads.reduce((sum, l) => sum + l.creditBalance, 0) : 0;
   const funnelTablesMissing = actions === null || leads === null;
 
   return (
     <PageShell>
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(4, 1fr)" }, gap: 2 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr 1fr", sm: "repeat(5, 1fr)" }, gap: 2 }}>
         <MetricCard label="Scans" value={String(scans.length)} accent="#39FF88" />
         <MetricCard label="Directions clicks" value={String(directionsClicks)} accent="#3DB2FF" />
-        <MetricCard label="Leads captured" value={String(leadCount)} accent="#F2C744" />
+        <MetricCard label="Wallets claimed" value={String(leadCount)} accent="#F2C744" />
+        <MetricCard label="Credit outstanding" value={`₹${outstandingCredit}`} sublabel="unredeemed" accent="#F2C744" />
         <MetricCard label="Today" value={String(todayCount)} />
       </Box>
 
@@ -97,8 +99,8 @@ export function QrScansPage() {
         </Typography>
         <Typography variant="body2" sx={{ color: "text.secondary", mb: 2 }}>
           Generate a QR code for each link below (any free QR generator) and print it on that banner. Scanning it
-          logs the visit here, then redirects to the "Coming Soon" landing page (Get Directions / Notify me) — no
-          app, no permission prompt, no added step for the person scanning.
+          logs the visit here, then redirects to the "Coming Soon" landing page (Get Directions / Claim ₹100
+          credit) — no app, no permission prompt, no added step for the person scanning.
         </Typography>
         <Stack spacing={1.5}>
           {KNOWN_BANNERS.map((b) => {
@@ -187,16 +189,16 @@ export function QrScansPage() {
 
       <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, borderRadius: 4 }}>
         <Typography variant="h6" sx={{ fontWeight: 800, mb: 1 }}>
-          Leads ({leadCount})
+          Wallets ({leadCount})
         </Typography>
         {!isAdmin ? (
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            Phone numbers are only shown in admin mode (tap the logo 5 times) — this count is visible to everyone,
-            the actual contact list isn't.
+            Phone numbers are only shown in admin mode (tap the logo 5 times) — these counts are visible to
+            everyone, the actual contact list isn't. To redeem a credit at the counter, use the Redeem page.
           </Typography>
         ) : !Array.isArray(leads) || leads.length === 0 ? (
           <Typography variant="body2" sx={{ color: "text.secondary" }}>
-            No one has left a number yet.
+            No one has claimed a welcome credit yet.
           </Typography>
         ) : (
           <Box sx={{ overflowX: "auto" }}>
@@ -206,6 +208,7 @@ export function QrScansPage() {
                   <TableCell>When</TableCell>
                   <TableCell>Phone</TableCell>
                   <TableCell>Banner</TableCell>
+                  <TableCell>Balance</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -214,6 +217,7 @@ export function QrScansPage() {
                     <TableCell>{new Date(lead.createdAt).toLocaleString("en-IN")}</TableCell>
                     <TableCell>{lead.phone}</TableCell>
                     <TableCell>{KNOWN_BANNERS.find((b) => b.id === lead.bannerId)?.label ?? lead.bannerId ?? "—"}</TableCell>
+                    <TableCell>₹{lead.creditBalance}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

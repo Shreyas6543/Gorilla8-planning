@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { to: "/floorplan", label: "Floor Plan" },
   { to: "/design", label: "Design" },
   { to: "/qr-scans", label: "QR Scans" },
+  { to: "/redeem", label: "Redeem" },
 ];
 
 const TAP_COUNT_REQUIRED = 5;
