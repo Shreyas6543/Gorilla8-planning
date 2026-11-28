@@ -3,19 +3,24 @@
 // src/lib/qrFunnel.ts: sendWalletWhatsApp() right after a wallet is
 // created, to deliver the /wallet/<token> link over WhatsApp.
 //
-// STATUS AS OF 2026-11-26: NOT WIRED TO A REAL PROVIDER YET. Shreyas is
-// setting up a WhatsApp Business API provider himself (account + Meta
-// business verification — not something this function can do). Until
-// WHATSAPP_API_URL/WHATSAPP_API_TOKEN/WHATSAPP_PHONE_NUMBER_ID are set as
-// Vercel env vars, this returns { sent: false } and the landing page falls
-// back to showing the wallet link on-screen instead — the feature works
-// end-to-end either way, this just upgrades delivery once configured.
+// STATUS AS OF 2026-11-28: going direct with Meta's own Cloud API (no
+// third-party BSP) — business number +91 82969 62200, migrated off the
+// WhatsApp Business app per Shreyas's call. Template `gorilla8_wallet_link`
+// (Utility category, English) uses a NAMED variable `{{link}}`, not a
+// positional `{{1}}` — that's why the request below references it by
+// `parameter_name`, not just position. Until
+// WHATSAPP_API_URL/WHATSAPP_API_TOKEN/WHATSAPP_PHONE_NUMBER_ID/
+// WHATSAPP_TEMPLATE_NAME are all set as Vercel env vars (and the template
+// is actually approved — it was "In review" as of this writing), this
+// returns { sent: false } and the landing page falls back to showing the
+// wallet link on-screen instead — the feature works end-to-end either way,
+// this just upgrades delivery once configured.
 //
-// Written against Meta's official WhatsApp Cloud API request shape (what
-// most providers either use directly or closely mirror — e.g. a Cloud-API-
-// compatible mode). If the actual provider's REST shape differs (classic
-// Gupshup, Twilio, etc.), only the fetch() call below needs to change —
-// everything else in this file (and the rest of the app) stays the same.
+// Written against Meta's official WhatsApp Cloud API request shape. If a
+// different provider ever replaces this, only the fetch() call below needs
+// to change — everything else in this file (and the rest of the app)
+// depends on the HTTP contract (POST phone+walletToken -> {sent: boolean}),
+// not on Meta specifically.
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
@@ -67,10 +72,11 @@ export default async function handler(req: any, res: any) {
         type: "template",
         template: {
           name: templateName,
-          language: { code: "en" },
-          // Adjust to match however the approved template's variables are
-          // defined — this assumes a single {{1}} placeholder for the link.
-          components: [{ type: "body", parameters: [{ type: "text", text: link }] }],
+          language: { code: "en" }, // template's language is plain "English" in WhatsApp Manager, which maps to "en" (not "en_US")
+          // Named parameter, not positional — gorilla8_wallet_link's body
+          // uses {{link}}, and Meta's API requires named variables to be
+          // referenced by parameter_name rather than just array position.
+          components: [{ type: "body", parameters: [{ type: "text", parameter_name: "link", text: link }] }],
         },
       }),
     });
